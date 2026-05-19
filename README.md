@@ -2,6 +2,14 @@
 
 一个独立的 macOS 桌面宠物 companion。它不修改 `Codex.app`，而是通过原生 AppKit 悬浮窗显示高清宠物帧，并根据 Codex 本地活动状态做轻量联动。
 
+<p align="center">
+  <img src="assets/reference/generated/base-shirt-skirt-hires.png" alt="Codex Pet Companion 主图" width="320">
+</p>
+
+## 桌宠形象
+
+当前桌宠名为 `Lingxi OL`，是一位年轻职场风格的桌面 companion。形象采用白衬衣、黑色包臀裙、眼镜和深色长袜的搭配，整体偏真人感而不是像素或强动画风格。她会在桌面上保持低干扰存在，根据 Codex 的本地活动状态显示工作中、等待输入或离线，并通过偶尔的小动作、转身和鼠标悬停反馈营造轻量陪伴感。
+
 ## 功能
 
 - 独立 macOS App，不 patch Codex 安装包。
@@ -40,7 +48,7 @@
 - `memory/`：项目级记忆，供后续 Codex 会话快速恢复上下文。
 - `INSTALL.md`：安装、验证和排障说明。
 - `assets/lingxi-ol-hires/`：当前桌宠实际使用的高清帧。
-- `assets/lingxi-ol/`：Codex 标准宠物包备份。
+- `assets/lingxi-ol/`：旧版标准 spritesheet 备份，当前不作为主展示资源。
 - `assets/reference/generated/`：后续 3D 多视角和动作设计的生成参考图。
 - `scripts/install.sh`：一键测试、构建、签名、安装并重启桌宠。
 - `scripts/package-release.sh`：生成可上传到 GitHub Release 的预编译安装包。
@@ -74,7 +82,7 @@ open build/CodexPetCompanion.app
 
 ## 资源说明
 
-当前运行版使用 `assets/lingxi-ol-hires/`，静止、工作、等待等主态来自 `assets/reference/generated/base-shirt-skirt-hires.png`，短动作来自 `assets/reference/generated/action-strip-shirt-skirt-consistent.png`，转身来自 `assets/reference/generated/turntable-strip-shirt-skirt-consistent.png`。裁切时禁止放大，也不再对整个人物做缩放动画；运行帧限制最大人物高度并在 App 内按比例绘制，避免从小图切大图导致模糊和身体比例变形。
+当前运行版主用 `assets/lingxi-ol-hires/`，README 顶部展示的主图来自 `assets/reference/generated/base-shirt-skirt-hires.png`。静止、工作、等待等主态由这张高清主图生成，短动作来自 `assets/reference/generated/action-strip-shirt-skirt-consistent.png`，转身来自 `assets/reference/generated/turntable-strip-shirt-skirt-consistent.png`。裁切时禁止放大，也不再对整个人物做缩放动画；运行帧限制最大人物高度并在 App 内按比例绘制，避免从小图切大图导致模糊和身体比例变形。
 
 ## 注意
 
