@@ -2,22 +2,33 @@
 from __future__ import annotations
 
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageFilter
 
 
 ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_ROOT = ROOT / "assets" / "reference" / "generated"
 OUTPUT_ROOT = ROOT / "assets" / "lingxi-ol-hires"
 DISPLAY_SIZE = (576, 624)
+MAX_UPSCALE = 1.0
+HIRES_SOURCE = REFERENCE_ROOT / "base-shirt-skirt-hires.png"
 
-STATE_POSES = {
-    "idle": [0, 2, 11, 0, 2, 11],
-    "running": [4, 5, 1, 7, 9, 11],
-    "waiting": [0, 3, 10, 11, 3, 0],
-    "review": [3, 6, 7, 3, 6, 7],
-    "waving": [0, 8, 8, 11],
-    "jumping": [4, 9, 10, 4, 9],
-    "failed": [10, 3, 6, 10, 3, 6, 10, 11],
+STATE_POSE = {
+    "idle": "base",
+    "running": "base",
+    "waiting": "base",
+    "review": "base",
+    "waving": "base",
+    "jumping": "base",
+    "failed": "base",
+}
+
+STATE_MOTION = {
+    "idle": [(1.000, 0, 0), (1.006, 0, -1), (1.012, 0, -2), (1.018, 0, -3), (1.022, 0, -4), (1.018, 0, -3), (1.012, 0, -2), (1.006, 0, -1), (1.000, 0, 0), (0.998, 0, 0)],
+    "running": [(1.000, 0, 0), (1.006, -1, -1), (1.012, -1, -2), (1.018, 1, -3), (1.022, 1, -4), (1.018, 0, -3), (1.012, -1, -2), (1.006, 0, -1), (1.000, 0, 0), (0.998, 0, 0)],
+    "waiting": [(1.000, 0, 0), (1.006, 0, -1), (1.012, 0, -2), (1.018, 0, -3), (1.022, 0, -4), (1.018, 0, -3), (1.012, 0, -2), (1.006, 0, -1), (1.000, 0, 0), (0.998, 0, 0)],
+    "review": [(1.000, 0, 0), (1.006, 0, -1), (1.012, 0, -2), (1.018, 0, -3), (1.022, 0, -4), (1.018, 0, -3), (1.012, 0, -2), (1.006, 0, -1), (1.000, 0, 0), (0.998, 0, 0)],
+    "jumping": [(1.000, 0, 0), (1.006, 0, -3), (1.012, 0, -6), (1.018, 0, -9), (1.012, 0, -6), (1.006, 0, -3), (1.000, 0, 0), (0.998, 0, 0)],
+    "failed": [(1.000, 0, 0), (1.006, 0, -1), (1.012, 0, -2), (1.018, 0, -3), (1.022, 0, -4), (1.018, 0, -3), (1.012, 0, -2), (1.006, 0, -1), (1.000, 0, 0), (0.998, 0, 0)],
 }
 
 
@@ -27,17 +38,32 @@ def is_chroma_green(pixel: tuple[int, int, int, int]) -> bool:
         return True
     dominance = green - max(red, blue)
     spread = green - min(red, blue)
-    return green > 70 and dominance > 8 and spread > 24
+    return green > 64 and dominance > 14 and spread > 28
 
 
 def transparent_chroma(image: Image.Image) -> Image.Image:
     rgba = image.convert("RGBA")
-    pixels = []
-    for pixel in rgba.getdata():
-        if is_chroma_green(pixel):
-            pixels.append((0, 0, 0, 0))
+    mask_values = []
+    for red, green, blue, alpha in rgba.getdata():
+        if is_chroma_green((red, green, blue, alpha)):
+            mask_values.append(0)
         else:
-            pixels.append(pixel)
+            mask_values.append(255)
+
+    mask = Image.new("L", rgba.size)
+    mask.putdata(mask_values)
+    # 去掉贴近绿幕的一圈边，再做非常轻的羽化，避免绿边和锯齿同时出现。
+    mask = mask.filter(ImageFilter.MinFilter(3)).filter(ImageFilter.GaussianBlur(radius=0.75))
+
+    pixels = []
+    for (red, green, blue, alpha), mask_alpha in zip(rgba.getdata(), mask.getdata()):
+        if mask_alpha < 22:
+            pixels.append((0, 0, 0, 0))
+            continue
+
+        if green > max(red, blue) + 3:
+            green = max(red, blue)
+        pixels.append((red, green, blue, min(alpha, mask_alpha)))
     rgba.putdata(pixels)
     return rgba
 
@@ -46,8 +72,8 @@ def clean_edge_residue(image: Image.Image) -> Image.Image:
     rgba = image.convert("RGBA")
     pixels = []
     for red, green, blue, alpha in rgba.getdata():
-        greenish = green > 45 and green > max(red, blue) + 3 and green - min(red, blue) > 10
-        if alpha == 0 or (greenish and alpha < 120):
+        greenish = green > 42 and green > max(red, blue) + 2 and green - min(red, blue) > 8
+        if alpha == 0 or (greenish and alpha < 96):
             pixels.append((0, 0, 0, 0))
         elif greenish:
             neutral_green = max(red, blue)
@@ -76,17 +102,43 @@ def trim_and_fit(frame: Image.Image) -> Image.Image:
         ))
 
     canvas_width, canvas_height = DISPLAY_SIZE
-    scale = min(canvas_width / cropped.width, canvas_height / cropped.height)
+    scale = min(canvas_width / cropped.width, canvas_height / cropped.height, MAX_UPSCALE)
     scaled = cropped.resize((
         max(1, round(cropped.width * scale)),
         max(1, round(cropped.height * scale)),
     ), Image.Resampling.LANCZOS)
+    scaled = scaled.filter(ImageFilter.UnsharpMask(radius=0.45, percent=28, threshold=8))
 
     canvas = Image.new("RGBA", DISPLAY_SIZE, (0, 0, 0, 0))
     x = (canvas_width - scaled.width) // 2
     y = canvas_height - scaled.height
     canvas.alpha_composite(scaled, (x, y))
     return clean_edge_residue(canvas)
+
+
+def prepare_hires_frame(path: Path) -> Image.Image:
+    return trim_and_fit(transparent_chroma(Image.open(path).convert("RGBA")))
+
+
+def transform_frame(frame: Image.Image, scale: float, dx: int, dy: int) -> Image.Image:
+    if scale == 1.0 and dx == 0 and dy == 0:
+        return frame.copy()
+
+    width, height = frame.size
+    scaled = frame.resize((
+        max(1, round(width * scale)),
+        max(1, round(height * scale)),
+    ), Image.Resampling.LANCZOS)
+
+    canvas = Image.new("RGBA", frame.size, (0, 0, 0, 0))
+    x = round((width - scaled.width) / 2) + dx
+    y = height - scaled.height + dy
+    canvas.alpha_composite(scaled, (x, y))
+    return clean_edge_residue(canvas)
+
+
+def motion_sequence(frame: Image.Image, motions: list[tuple[float, int, int]]) -> list[Image.Image]:
+    return [transform_frame(frame, scale, dx, dy) for scale, dx, dy in motions]
 
 
 def split_grid(path: Path, columns: int, rows: int) -> list[Image.Image]:
@@ -113,11 +165,11 @@ def write_state(state: str, frames: list[Image.Image]) -> None:
 
 
 def main() -> None:
-    ambient_frames = split_grid(REFERENCE_ROOT / "ambient-actions-v1.png", columns=6, rows=2)
+    base_frame = prepare_hires_frame(HIRES_SOURCE)
     turn_frames = split_grid(REFERENCE_ROOT / "turntable-shirt-skirt.png", columns=8, rows=1)
 
-    for state, pose_indices in STATE_POSES.items():
-        write_state(state, [ambient_frames[index] for index in pose_indices])
+    for state in STATE_POSE:
+        write_state(state, motion_sequence(base_frame, STATE_MOTION[state if state != "waving" else "idle"]))
 
     write_state("running-right", turn_frames)
     write_state("running-left", list(reversed(turn_frames)))
@@ -127,8 +179,10 @@ def main() -> None:
         "\n".join(
             [
                 "source=assets/reference/generated/turntable-shirt-skirt.png",
-                "source=assets/reference/generated/ambient-actions-v1.png",
+                "source=assets/reference/generated/base-shirt-skirt-hires.png",
                 "display_size=576x624",
+                f"max_upscale={MAX_UPSCALE}",
+                "motion=fixed suites from high-resolution same-pose micro-motion frames",
                 *[
                     f"{state} {len(list((OUTPUT_ROOT / state).glob('*.png')))}"
                     for state in sorted(path.name for path in OUTPUT_ROOT.iterdir() if path.is_dir())

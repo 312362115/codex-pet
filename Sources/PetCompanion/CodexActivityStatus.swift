@@ -84,19 +84,19 @@ public struct PetAnimationFramePolicy {
     public func frameCount(for animation: PetAnimation) -> Int {
         switch animation {
         case .idle:
-            return 6
+            return 10
         case .running:
-            return 6
+            return 10
         case .waiting:
-            return 6
+            return 10
         case .failed:
-            return 8
+            return 10
         case .waving:
-            return 4
+            return 10
         case .jumping:
-            return 5
+            return 8
         case .review:
-            return 6
+            return 10
         }
     }
 }
@@ -124,13 +124,23 @@ public struct PetAmbientActionPolicy {
     }
 
     public func ambientAnimations(for status: CodexActivityStatus) -> [PetAnimation] {
+        ambientSuites(for: status).flatMap { $0 }
+    }
+
+    public func ambientSuites(for status: CodexActivityStatus) -> [[PetAnimation]] {
         switch status {
         case .offline:
-            return [.failed]
+            return [[.failed]]
         case .working:
-            return [.review, .running, .idle]
+            return [
+                [.review, .running, .review],
+                [.review]
+            ]
         case .waiting:
-            return [.waiting, .idle, .waving, .jumping]
+            return [
+                [.waiting, .idle, .waiting],
+                [.waiting]
+            ]
         }
     }
 }

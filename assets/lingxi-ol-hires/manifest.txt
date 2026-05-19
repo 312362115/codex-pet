@@ -1,12 +1,14 @@
 source=assets/reference/generated/turntable-shirt-skirt.png
-source=assets/reference/generated/ambient-actions-v1.png
+source=assets/reference/generated/base-shirt-skirt-hires.png
 display_size=576x624
-failed 8
-idle 6
-jumping 5
-review 6
-running 6
+max_upscale=1.0
+motion=fixed suites from high-resolution same-pose micro-motion frames
+failed 10
+idle 10
+jumping 8
+review 10
+running 10
 running-left 8
 running-right 8
-waiting 6
-waving 4
+waiting 10
+waving 10

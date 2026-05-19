@@ -220,6 +220,9 @@ private final class PetView: NSView {
     private let ambientPolicy = PetAmbientActionPolicy()
     var onDragStart: (() -> Void)?
     var onDragEnd: (() -> Void)?
+    var onMouseEnter: (() -> Void)?
+    var onMouseExit: (() -> Void)?
+    private var trackingArea: NSTrackingArea?
 
     init(frameProvider: PetFrameProvider, config: CompanionConfig) {
         self.frameProvider = frameProvider
@@ -264,6 +267,30 @@ private final class PetView: NSView {
         frameIndex = (frameIndex + 1) % frameProvider.frameCount(for: animation)
         needsDisplay = true
         return false
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+
+        let trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+        self.trackingArea = trackingArea
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onMouseEnter?()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onMouseExit?()
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -359,6 +386,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var currentStatus = CodexActivityStatus.waiting
     private var isDragging = false
     private var isPlayingAmbientAction = false
+    private var isHovering = false
+    private var ambientSuite: [PetAnimation] = []
+    private var ambientSuiteStep = 0
+    private var workingSuiteCursor = 0
+    private var waitingSuiteCursor = 0
+    private var offlineSuiteCursor = 0
     private let ambientPolicy = PetAmbientActionPolicy()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -374,6 +407,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             petView.onDragEnd = { [weak self] in
                 self?.endDragging()
+            }
+            petView.onMouseEnter = { [weak self] in
+                self?.beginHovering()
+            }
+            petView.onMouseExit = { [weak self] in
+                self?.endHovering()
             }
 
             let frame = initialWindowFrame()
@@ -439,28 +478,46 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let interval = TimeInterval.random(in: 7.0...16.0)
+        let interval = TimeInterval.random(in: 6.0...12.0)
         ambientTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
             self?.playAmbientAction()
         }
     }
 
     private func playAmbientAction() {
-        guard !isDragging, !isPlayingAmbientAction, let petView else {
+        guard !isDragging, !isPlayingAmbientAction, petView != nil else {
             scheduleAmbientAction()
             return
         }
 
-        let candidates = ambientPolicy.ambientAnimations(for: currentStatus)
-        guard let animation = candidates.randomElement() else {
+        let suite = isHovering ? hoverSuite() : nextAmbientSuite()
+        guard !suite.isEmpty else {
             scheduleAmbientAction()
             return
         }
 
         isPlayingAmbientAction = true
+        ambientSuite = suite
+        ambientSuiteStep = 0
+        playNextAmbientSuiteStep()
+    }
+
+    private func playNextAmbientSuiteStep() {
+        guard !isDragging, let petView else {
+            finishAmbientAction()
+            return
+        }
+
+        guard ambientSuiteStep < ambientSuite.count else {
+            finishAmbientAction()
+            return
+        }
+
+        let animation = ambientSuite[ambientSuiteStep]
+        ambientSuiteStep += 1
         petView.play(animation: animation)
         animationTimer?.invalidate()
-        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.18, repeats: true) { [weak self] timer in
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] timer in
             guard let self, let petView = self.petView else {
                 timer.invalidate()
                 return
@@ -468,10 +525,40 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
             if petView.advanceAnimationFrame() {
                 timer.invalidate()
-                self.isPlayingAmbientAction = false
-                petView.settle(status: self.currentStatus)
-                self.scheduleAmbientAction()
+                self.playNextAmbientSuiteStep()
             }
+        }
+    }
+
+    private func finishAmbientAction() {
+        animationTimer?.invalidate()
+        animationTimer = nil
+        ambientSuite = []
+        ambientSuiteStep = 0
+        isPlayingAmbientAction = false
+        petView?.settle(status: currentStatus)
+        scheduleAmbientAction()
+    }
+
+    private func nextAmbientSuite() -> [PetAnimation] {
+        let suites = ambientPolicy.ambientSuites(for: currentStatus)
+        guard !suites.isEmpty else {
+            return []
+        }
+
+        switch currentStatus {
+        case .working:
+            let suite = suites[workingSuiteCursor % suites.count]
+            workingSuiteCursor += 1
+            return suite
+        case .waiting:
+            let suite = suites[waitingSuiteCursor % suites.count]
+            waitingSuiteCursor += 1
+            return suite
+        case .offline:
+            let suite = suites[offlineSuiteCursor % suites.count]
+            offlineSuiteCursor += 1
+            return suite
         }
     }
 
@@ -480,7 +567,40 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         ambientTimer = nil
         animationTimer?.invalidate()
         animationTimer = nil
+        ambientSuite = []
+        ambientSuiteStep = 0
         isPlayingAmbientAction = false
+    }
+
+    private func beginHovering() {
+        guard !isDragging else {
+            return
+        }
+
+        isHovering = true
+        stopAmbientAnimation()
+        playAmbientAction()
+    }
+
+    private func endHovering() {
+        isHovering = false
+        guard !isDragging else {
+            return
+        }
+        stopAmbientAnimation()
+        petView?.settle(status: currentStatus)
+        scheduleAmbientAction()
+    }
+
+    private func hoverSuite() -> [PetAnimation] {
+        switch currentStatus {
+        case .working:
+            return [.review, .running, .review]
+        case .waiting:
+            return [.waiting, .idle, .waiting]
+        case .offline:
+            return [.failed]
+        }
     }
 
     private func beginDragging() {

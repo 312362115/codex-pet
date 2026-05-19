@@ -43,7 +43,7 @@ open "$HOME/.codex/pet-companion/CodexPetCompanion.app"
 
 ## 资源说明
 
-当前运行版使用 `assets/lingxi-ol-hires/`，由 `assets/reference/generated/turntable-shirt-skirt.png` 和 `assets/reference/generated/ambient-actions-v1.png` 重建，视觉形象为白衬衣、黑色包臀裙、黑丝和眼镜。`assets/reference/generated/` 中也保留了后续可继续迭代的 3D 多视角和动作设计参考图。
+当前运行版使用 `assets/lingxi-ol-hires/`，主体帧由 `assets/reference/generated/base-shirt-skirt-hires.png` 这张高清单图缩小裁切生成，避免从拼图小格放大带来的毛刺和绿色毛边。视觉形象为白衬衣、黑色包臀裙、黑丝和眼镜。`assets/reference/generated/` 中也保留了后续可继续迭代的 3D 多视角和动作设计参考图。
 
 ## 注意
 
