@@ -22,6 +22,7 @@
 - `scripts/build-app.sh`：构建 `.app`。
 - `scripts/test-status-logic.sh`：运行策略测试。
 - `scripts/build-hires-assets.py`：从生成行图重建高清帧的资产脚本。
+- `scripts/build-shirt-skirt-assets.py`：从衬衣包臀裙参考图重建当前运行帧。
 
 ## 构建
 
@@ -42,7 +43,7 @@ open "$HOME/.codex/pet-companion/CodexPetCompanion.app"
 
 ## 资源说明
 
-当前运行版使用 `assets/lingxi-ol-hires/`。`assets/reference/generated/` 中保留了新的 3D 多视角、清凉 OL 服装和自然动作参考图，后续可以继续切成转身、侧身、背身动作帧并接入 companion。
+当前运行版使用 `assets/lingxi-ol-hires/`，由 `assets/reference/generated/turntable-shirt-skirt.png` 和 `assets/reference/generated/ambient-actions-v1.png` 重建，视觉形象为白衬衣、黑色包臀裙、黑丝和眼镜。`assets/reference/generated/` 中也保留了后续可继续迭代的 3D 多视角和动作设计参考图。
 
 ## 注意
 
