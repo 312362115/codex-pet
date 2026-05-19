@@ -1,0 +1,7 @@
+.build/
+.swiftpm/
+.clang-cache/
+build/
+*.xcuserdata/
+*.DS_Store
+*.log
