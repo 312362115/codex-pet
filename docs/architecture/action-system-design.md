@@ -35,9 +35,9 @@ premultiplied-alpha 整帧补间适合轮廓变化小的动作，例如眨眼、
 
 ## 当前落地状态
 
-本轮已完成 clip-based 动作体系：`PetActionCatalog` 负责动作层级、优先级、可用状态、表情语义和冷却描述；`PetActionTimeline` 负责冲突决策；runtime 拆分为表情、微动作、小动作、大动作和交互调度器；所有默认动作都有 PNG 帧目录、帧数策略、时长策略和状态逻辑回归。
+本轮已完成 clip-based 动作调度体系：`PetActionCatalog` 负责动作层级、优先级、可用状态、表情语义和冷却描述；`PetActionTimeline` 负责冲突决策；runtime 拆分为表情、微动作、小动作、大动作和交互调度器；默认主动作都有 PNG 帧目录、帧数策略、时长策略和状态逻辑回归。
 
-仍未做的是局部脸部/头发/手臂图层 overlay。这个属于下一轮美术资产结构升级，不影响当前“完整动作体系”以整帧 clip 方式运行。
+脸部表情视觉层仍未完成。固定坐标整帧绘制已经判定为不适合正式方向，后续 TODO 记录在 [脸部表情暂停与后续 TODO](../decisions/2026-05-19-expression-overlay-todo.md)。局部脸部、头发、手臂 overlay 和每个大动作专门绘制真实关键帧，仍属于下一轮素材结构升级。
 
 ## 角色行为模型
 
@@ -795,7 +795,7 @@ ActionClip
 ### Phase 2：加入表情层
 
 - 增加 `PetExpression` 概念。（已落地）
-- 支持 `blink`、`slow-blink`、`focus-tighten`、`small-smile`。（已落地）
+- 支持 `blink`、`slow-blink`、`focus-tighten`、`small-smile` 的动作名和调度入口。（已落地；视觉表情层暂停重做）
 - 表情动作与主动作调度解耦。（已落地；runtime 暂不做图层 overlay，主动作期间表情延后）
 - working 使用 `focused`，waiting 使用 `neutral/curious/tired`，offline 使用 `error`。（已纳入 action catalog）
 
@@ -811,7 +811,7 @@ ActionClip
 - 短期保留扁平 PNG 目录，避免一次性迁移 runtime 资源结构。（已决定）
 - manifest 记录新增动作帧数。（已落地）
 - 动作层级、总时长、冷却、可用状态先由 `PetActionCatalog` 表达。（已落地）
-- 脸部、头部、手臂等局部图层拆分推迟到下一轮素材升级。
+- 脸部、头部、手臂等局部图层拆分推迟到下一轮素材升级；脸部表情不再用整帧硬编码绘制补齐。
 
 ### Phase 5：高级动作
 
@@ -823,8 +823,8 @@ ActionClip
 
 - 默认 3 分钟 ambient 中不出现完整 360° 转身。
 - hover 只触发 `cursor-look` 或轻表情反馈，不触发 `turntable`。
-- working 能看出专注状态：`focused` 表情、`review` 姿态、扶眼镜/点头/轻敲等小动作。
-- waiting 能看出等待状态：`neutral/curious/tired` 表情、慢眨眼、挥手、重心变化。
+- working 能看出专注状态：`review` 姿态、扶眼镜/点头/轻敲等小动作；`focused` 脸部表情待 overlay 补齐。
+- waiting 能看出等待状态：慢眨眼、挥手、重心变化；`neutral/curious/tired` 脸部表情待 overlay 补齐。
 - offline 保持低干扰，不频繁动。
 - 动作结束后都自然回到当前状态基础姿态。
 - 表情、微动作和主动作的调度关系有测试覆盖。
@@ -836,7 +836,7 @@ ActionClip
 不要继续围绕 `turning` 优化。默认动作体系已改为语义 clip 和分层调度：
 
 1. 移除默认完整转身。（已落地）
-2. 引入表情层，至少支持眨眼、专注、好奇、轻微微笑。（已落地）
+2. 引入表情层调度入口，至少支持眨眼、专注、好奇、轻微微笑；视觉表情层暂停，后续按局部分层 overlay 重做。
 3. 引入注意力转移动作：`glance-left/right`、`cursor-look`。（已落地）
 4. 引入更符合角色设定的小动作：`adjust-glasses`、`nod`、`check-notes`、`thinking`、`tap-keyboard`、`stretch-wrist`。（已落地）
 5. 将 `turntable` 明确放入 debug/asset review，不参与默认调度。（默认调度已移除）

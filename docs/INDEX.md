@@ -19,6 +19,7 @@
 
 - [改用独立桌宠应用](decisions/2026-05-19-standalone-companion.md)：放弃 patch `Codex.app`，改为独立 companion app 的原因和后续约束。
 - [Release 预编译安装包](decisions/2026-05-19-release-packaging.md)：为什么普通用户优先下载 GitHub Release，而不是从源码编译。
+- [脸部表情暂停与后续 TODO](decisions/2026-05-19-expression-overlay-todo.md)：记录整帧硬编码表情方案暂停，以及后续局部分层 overlay 的实现方向。
 
 ## 验证记录
 
