@@ -36,6 +36,8 @@
 
 - `Sources/`：Swift/AppKit 源码。
 - `Tests/`：轻量策略测试。
+- `docs/`：开发历史、架构、决策和验证记录。
+- `memory/`：项目级记忆，供后续 Codex 会话快速恢复上下文。
 - `INSTALL.md`：安装、验证和排障说明。
 - `assets/lingxi-ol-hires/`：当前桌宠实际使用的高清帧。
 - `assets/lingxi-ol/`：Codex 标准宠物包备份。
