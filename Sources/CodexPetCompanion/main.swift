@@ -256,6 +256,10 @@ private final class PetView: NSView {
         needsDisplay = true
     }
 
+    func frameCount(for animation: PetAnimation) -> Int {
+        frameProvider.frameCount(for: animation)
+    }
+
     func advanceAnimationFrame() -> Bool {
         guard motionPolicy.loopsContinuously(animation: animation) else {
             let nextFrameIndex = frameIndex + 1
@@ -419,6 +423,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var workingLargeSuiteCursor = 0
     private var waitingLargeSuiteCursor = 0
     private let ambientPolicy = PetAmbientActionPolicy()
+    private let timingPolicy = PetAnimationTimingPolicy()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -561,7 +566,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         ambientSuiteStep += 1
         petView.play(animation: animation)
         animationTimer?.invalidate()
-        animationTimer = Timer.scheduledTimer(withTimeInterval: frameInterval(for: animation), repeats: true) { [weak self] timer in
+        let frameInterval = timingPolicy.frameInterval(for: animation, frameCount: petView.frameCount(for: animation))
+        animationTimer = Timer.scheduledTimer(withTimeInterval: frameInterval, repeats: true) { [weak self] timer in
             guard let self, let petView = self.petView else {
                 timer.invalidate()
                 return
@@ -680,15 +686,6 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             return [.waiting, .turning, .waiting]
         case .offline:
             return [.failed]
-        }
-    }
-
-    private func frameInterval(for animation: PetAnimation) -> TimeInterval {
-        switch animation {
-        case .turning:
-            return 0.36
-        default:
-            return 0.24
         }
     }
 

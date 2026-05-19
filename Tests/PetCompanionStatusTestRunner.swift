@@ -43,13 +43,20 @@ struct StatusTestRunner {
 
         let framePolicy = PetAnimationFramePolicy()
         expect(framePolicy.frameCount(for: .idle) == 10, "idle should use still pose frames")
-        expect(framePolicy.frameCount(for: .running) == 10, "running should use pose-switch frames")
+        expect(framePolicy.frameCount(for: .running) == 24, "running should use tweened action frames")
         expect(framePolicy.frameCount(for: .waiting) == 10, "waiting should use still pose frames")
         expect(framePolicy.frameCount(for: .failed) == 10, "failed should use still pose frames")
-        expect(framePolicy.frameCount(for: .waving) == 10, "waving should use transition frames")
+        expect(framePolicy.frameCount(for: .waving) == 24, "waving should use tweened action frames")
         expect(framePolicy.frameCount(for: .jumping) == 8, "jumping should use still pose frames")
         expect(framePolicy.frameCount(for: .review) == 10, "review should use still pose frames")
-        expect(framePolicy.frameCount(for: .turning) == 9, "turning should use side, back, and return-to-front frames")
+        expect(framePolicy.frameCount(for: .turning) == 25, "turning should use interpolated turntable frames")
+
+        let timingPolicy = PetAnimationTimingPolicy()
+        expect(timingPolicy.totalDuration(for: .running) == 2.4, "running should keep a calm short-action duration")
+        expect(timingPolicy.totalDuration(for: .waving) == 2.4, "waving should keep a calm short-action duration")
+        expect(timingPolicy.totalDuration(for: .turning) == 3.24, "turning should keep the previous large-action duration")
+        expect(abs(timingPolicy.frameInterval(for: .running, frameCount: 24) - 0.1) < 0.0001, "running interval should adapt to the denser frame count")
+        expect(abs(timingPolicy.frameInterval(for: .turning, frameCount: 25) - 0.1296) < 0.0001, "turning interval should adapt to the denser frame count")
 
         let motionPolicy = PetMotionPolicy()
         expect(!motionPolicy.loopsContinuously(animation: .idle), "idle should not loop continuously")

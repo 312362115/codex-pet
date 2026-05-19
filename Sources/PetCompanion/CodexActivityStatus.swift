@@ -87,20 +87,37 @@ public struct PetAnimationFramePolicy {
         case .idle:
             return 10
         case .running:
-            return 10
+            return 24
         case .waiting:
             return 10
         case .failed:
             return 10
         case .waving:
-            return 10
+            return 24
         case .jumping:
             return 8
         case .review:
             return 10
         case .turning:
-            return 9
+            return 25
         }
+    }
+}
+
+public struct PetAnimationTimingPolicy {
+    public init() {}
+
+    public func totalDuration(for animation: PetAnimation) -> TimeInterval {
+        switch animation {
+        case .turning:
+            return 3.24
+        case .idle, .running, .waiting, .failed, .waving, .jumping, .review:
+            return 2.4
+        }
+    }
+
+    public func frameInterval(for animation: PetAnimation, frameCount: Int) -> TimeInterval {
+        totalDuration(for: animation) / TimeInterval(max(1, frameCount))
     }
 }
 

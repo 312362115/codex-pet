@@ -4,14 +4,16 @@ source=assets/reference/generated/turntable-strip-shirt-skirt-consistent.png
 display_size=576x624
 max_body_height=540
 max_upscale=1.0
-motion=pose switches only, no body scale, no upscale
+motion=alpha-aware tweened transitions, no body scale, no upscale
+action_frame_count=24
+turn_frame_count=25
 failed 10
 idle 10
 jumping 8
 review 10
-running 10
-running-left 8
-running-right 8
-turning 9
+running 24
+running-left 25
+running-right 25
+turning 25
 waiting 10
-waving 10
+waving 24

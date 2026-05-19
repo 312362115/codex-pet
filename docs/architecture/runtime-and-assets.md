@@ -5,7 +5,7 @@
 | 模块 | 文件 | 职责 |
 |------|------|------|
 | AppKit 入口 | `Sources/CodexPetCompanion/main.swift` | 创建透明悬浮窗、绘制宠物、处理拖动、右键菜单、定时动作和状态轮询。 |
-| 状态与策略 | `Sources/PetCompanion/CodexActivityStatus.swift` | 定义 Codex 状态、动画枚举、状态分类、帧数和动作套组策略。 |
+| 状态与策略 | `Sources/PetCompanion/CodexActivityStatus.swift` | 定义 Codex 状态、动画枚举、状态分类、帧数、动作时长和动作套组策略。 |
 | 策略测试 | `Tests/PetCompanionStatusTestRunner.swift` | 验证状态分类、动画映射、帧数和动作套组。 |
 | 运行帧生成 | `scripts/build-shirt-skirt-assets.py` | 从参考图生成 `assets/lingxi-ol-hires/` 运行时 PNG 帧。 |
 | 源码安装 | `scripts/install.sh` | 测试、构建、签名、安装并重启本机桌宠。 |
@@ -24,6 +24,8 @@ CodexActivityReader
 ```
 
 `PetView` 使用 `context.interpolationQuality = .high` 绘制帧，并通过 aspect-fit 保持原始帧比例，避免窗口尺寸和素材尺寸不一致时产生拉伸。
+
+动作播放使用固定总时长和动态帧间隔：短动作保持 `2.4s`，转身动作保持 `3.24s`。当离线素材生成更多补间帧时，运行时按实际帧数自动缩短单帧间隔，避免补帧后动作整体变慢。
 
 ## 状态读取
 
@@ -50,6 +52,14 @@ CodexActivityReader
 | 鼠标悬停 | 立即触发 `turning`，并暂停常规大动作计时。 |
 
 所有动作都不连续 loop，播完回到当前状态的静止态。
+
+当前高频动作帧数：
+
+| 动作 | 帧数 | 说明 |
+|------|------|------|
+| `running` | 24 | 主姿态到动作姿态再回到主姿态的透明通道感知补间。 |
+| `waving` | 24 | 主姿态到挥手姿态再回到主姿态的透明通道感知补间。 |
+| `turning` | 25 | 8 张转身关键帧之间插入缓动补间，并回到正面。 |
 
 ## 素材目录
 
@@ -92,6 +102,7 @@ MAX_UPSCALE = 1.0
 - 抠图后清理绿色背景残留。
 - 透明像素写成 `(0,0,0,0)`，减少隐藏色污染。
 - 保留人物比例，由运行时 aspect-fit 再绘制到窗口内。
+- 相邻关键帧使用 premultiplied-alpha 补间，避免透明边缘在普通 RGBA 混合下变灰或泛色。
 
 ## 发布包结构
 

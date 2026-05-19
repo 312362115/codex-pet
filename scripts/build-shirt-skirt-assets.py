@@ -11,6 +11,12 @@ OUTPUT_ROOT = ROOT / "assets" / "lingxi-ol-hires"
 DISPLAY_SIZE = (576, 624)
 MAX_BODY_HEIGHT = 540
 MAX_UPSCALE = 1.0
+ACTION_FRAME_COUNT = 24
+ACTION_START_HOLD_FRAMES = 3
+ACTION_TARGET_HOLD_FRAMES = 5
+ACTION_TRANSITION_FRAMES = 8
+TURN_FRAME_COUNT = 25
+TURN_SEGMENT_FRAMES = 3
 ACTION_STRIP_SOURCE = REFERENCE_ROOT / "action-strip-shirt-skirt-consistent.png"
 TURNTABLE_STRIP_SOURCE = REFERENCE_ROOT / "turntable-strip-shirt-skirt-consistent.png"
 PRIMARY_SOURCE = REFERENCE_ROOT / "base-shirt-skirt-hires.png"
@@ -24,10 +30,16 @@ def is_chroma_green(pixel: tuple[int, int, int, int]) -> bool:
     return green > 64 and dominance > 14 and spread > 28
 
 
+def image_data(image: Image.Image):
+    if hasattr(image, "get_flattened_data"):
+        return image.get_flattened_data()
+    return image.getdata()
+
+
 def transparent_chroma(image: Image.Image) -> Image.Image:
     rgba = image.convert("RGBA")
     mask_values = []
-    for red, green, blue, alpha in rgba.getdata():
+    for red, green, blue, alpha in image_data(rgba):
         if is_chroma_green((red, green, blue, alpha)):
             mask_values.append(0)
         else:
@@ -39,7 +51,7 @@ def transparent_chroma(image: Image.Image) -> Image.Image:
     mask = mask.filter(ImageFilter.GaussianBlur(radius=0.35))
 
     pixels = []
-    for (red, green, blue, alpha), mask_alpha in zip(rgba.getdata(), mask.getdata()):
+    for (red, green, blue, alpha), mask_alpha in zip(image_data(rgba), image_data(mask)):
         if mask_alpha < 32:
             pixels.append((0, 0, 0, 0))
             continue
@@ -54,7 +66,7 @@ def transparent_chroma(image: Image.Image) -> Image.Image:
 def clean_edge_residue(image: Image.Image) -> Image.Image:
     rgba = image.convert("RGBA")
     pixels = []
-    for red, green, blue, alpha in rgba.getdata():
+    for red, green, blue, alpha in image_data(rgba):
         greenish = green > 42 and green > max(red, blue) + 2 and green - min(red, blue) > 8
         if alpha == 0 or (greenish and alpha < 96):
             pixels.append((0, 0, 0, 0))
@@ -99,19 +111,73 @@ def trim_and_fit(frame: Image.Image) -> Image.Image:
     return clean_edge_residue(canvas)
 
 
-def brief_action_sequence(primary_frame: Image.Image, action_frame: Image.Image) -> list[Image.Image]:
+def smoothstep(progress: float) -> float:
+    return progress * progress * (3.0 - 2.0 * progress)
+
+
+def tween_frame(start: Image.Image, end: Image.Image, progress: float) -> Image.Image:
+    start_rgba = start.convert("RGBA")
+    end_rgba = end.convert("RGBA")
+    if start_rgba.size != end_rgba.size:
+        raise ValueError(f"Cannot tween frames with different sizes: {start_rgba.size} vs {end_rgba.size}")
+
+    weight = smoothstep(progress)
+    inverse = 1.0 - weight
+    pixels = []
+    for (sr, sg, sb, sa), (er, eg, eb, ea) in zip(image_data(start_rgba), image_data(end_rgba)):
+        start_alpha = sa / 255.0
+        end_alpha = ea / 255.0
+        alpha = start_alpha * inverse + end_alpha * weight
+        if alpha <= 0.0001:
+            pixels.append((0, 0, 0, 0))
+            continue
+
+        red = (sr * start_alpha * inverse + er * end_alpha * weight) / alpha
+        green = (sg * start_alpha * inverse + eg * end_alpha * weight) / alpha
+        blue = (sb * start_alpha * inverse + eb * end_alpha * weight) / alpha
+        pixels.append((
+            max(0, min(255, round(red))),
+            max(0, min(255, round(green))),
+            max(0, min(255, round(blue))),
+            max(0, min(255, round(alpha * 255))),
+        ))
+
+    tweened = Image.new("RGBA", start_rgba.size)
+    tweened.putdata(pixels)
+    return clean_edge_residue(tweened)
+
+
+def transition_frames(start: Image.Image, end: Image.Image, frame_count: int) -> list[Image.Image]:
     return [
-        primary_frame.copy(),
-        primary_frame.copy(),
-        action_frame.copy(),
-        action_frame.copy(),
-        action_frame.copy(),
-        action_frame.copy(),
-        primary_frame.copy(),
-        primary_frame.copy(),
-        primary_frame.copy(),
-        primary_frame.copy(),
+        tween_frame(start, end, index / frame_count)
+        for index in range(1, frame_count + 1)
     ]
+
+
+def brief_action_sequence(primary_frame: Image.Image, action_frame: Image.Image) -> list[Image.Image]:
+    frames = [
+        *[primary_frame.copy() for _ in range(ACTION_START_HOLD_FRAMES)],
+        *transition_frames(primary_frame, action_frame, ACTION_TRANSITION_FRAMES),
+        *[action_frame.copy() for _ in range(ACTION_TARGET_HOLD_FRAMES)],
+        *transition_frames(action_frame, primary_frame, ACTION_TRANSITION_FRAMES),
+    ]
+    if len(frames) != ACTION_FRAME_COUNT:
+        raise AssertionError(f"Expected {ACTION_FRAME_COUNT} action frames, got {len(frames)}")
+    return frames
+
+
+def turntable_sequence(turn_frames: list[Image.Image]) -> list[Image.Image]:
+    if len(turn_frames) < 2:
+        return turn_frames
+
+    frames = [turn_frames[0].copy()]
+    for index, frame in enumerate(turn_frames):
+        next_frame = turn_frames[(index + 1) % len(turn_frames)]
+        frames.extend(transition_frames(frame, next_frame, TURN_SEGMENT_FRAMES))
+
+    if len(frames) != TURN_FRAME_COUNT:
+        raise AssertionError(f"Expected {TURN_FRAME_COUNT} turn frames, got {len(frames)}")
+    return frames
 
 
 def split_grid(path: Path, columns: int, rows: int) -> list[Image.Image]:
@@ -152,9 +218,9 @@ def main() -> None:
     write_state("running", brief_action_sequence(primary_frame, action_frames[2]))
     write_state("waving", brief_action_sequence(primary_frame, action_frames[3]))
 
-    write_state("running-right", turn_frames)
-    write_state("running-left", list(reversed(turn_frames)))
-    write_state("turning", [*turn_frames, turn_frames[0]])
+    write_state("running-right", turntable_sequence(turn_frames))
+    write_state("running-left", turntable_sequence(list(reversed(turn_frames))))
+    write_state("turning", turntable_sequence(turn_frames))
 
     manifest = OUTPUT_ROOT / "manifest.txt"
     manifest.write_text(
@@ -166,7 +232,9 @@ def main() -> None:
                 "display_size=576x624",
                 f"max_body_height={MAX_BODY_HEIGHT}",
                 f"max_upscale={MAX_UPSCALE}",
-                "motion=pose switches only, no body scale, no upscale",
+                "motion=alpha-aware tweened transitions, no body scale, no upscale",
+                f"action_frame_count={ACTION_FRAME_COUNT}",
+                f"turn_frame_count={TURN_FRAME_COUNT}",
                 *[
                     f"{state} {len(list((OUTPUT_ROOT / state).glob('*.png')))}"
                     for state in sorted(path.name for path in OUTPUT_ROOT.iterdir() if path.is_dir())
