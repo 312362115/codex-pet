@@ -22,18 +22,54 @@ PASS status logic
 - 状态到动画的映射。
 - 各动画帧数。
 - 动作总时长和按帧数自适应的单帧间隔。
-- 静止、小动作、大动作策略。
+- 静止、表情、微动作、小动作、中/大动作、交互和调试动作策略。
+- 动作 catalog 的层级分类。
+- 统一 timeline 的冲突决策：小动作排队、可见动作打断微动作、大动作丢弃、hover 打断、drag 抑制、过期状态动作丢弃。
 
 关键帧数预期：
 
+- `blink`：5 帧。
+- `slow-blink`：8 帧。
+- `eye-shift-left/right`：8 帧。
+- 表情过渡动作：12 帧。
+- 微动作：`breathing`、`hair-sway` 为 12 帧；`weight-shift`、`shoulder-relax`、`tiny-hand-adjust` 为 16 帧。
 - `running`：24 帧。
 - `waving`：24 帧。
+- `adjust-glasses`：24 帧。
+- `thinking`：24 帧。
+- `tap-keyboard`：24 帧。
+- `check-notes`：24 帧。
+- `stretch-wrist`：24 帧。
+- `focus-shift`：24 帧。
+- `fix-posture`：24 帧。
+- `adjust-outfit`：24 帧。
+- `nod`：16 帧。
+- `glance-left`：16 帧。
+- `glance-right`：16 帧。
+- `cursor-look`：16 帧。
+- `hover-smile`：12 帧。
+- `context-menu-attend`：12 帧。
+- `look-around`：32 帧。
+- `stretch`：32 帧。
+- `step-aside`：32 帧。
+- `posture-reset`：32 帧。
+- `wake-up`：20 帧。
 - `turning`：25 帧。
 
 对应时长预期：
 
+- `blink`：`0.25s`。
+- `slow-blink`：`0.7s`。
+- `eye-shift-left/right`：`0.8s`。
+- 表情过渡：`1.0s`。
+- 微动作：`1.2-1.6s`。
 - 短动作：`2.4s`。
+- 短瞥动作：`1.6s`。
+- `look-around`：`3.2s`。
+- `stretch`、`step-aside`：`3.6s`。
 - 转身动作：`3.24s`。
+
+补充说明：当前机器的 `swift test` 会在测试 target 导入 Swift `Testing` 模块时报 `no such module 'Testing'`。在工具链修复前，状态策略回归以 `./scripts/test-status-logic.sh` 为准；该脚本直接编译并运行同一套核心状态和动作策略断言。
 
 ## 用例 2：源码安装
 
