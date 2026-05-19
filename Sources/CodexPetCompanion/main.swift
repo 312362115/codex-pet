@@ -445,7 +445,6 @@ private final class PetView: NSView {
 }
 
 private enum PetSchedulerKind {
-    case expression
     case micro
     case small
     case large
@@ -458,7 +457,6 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var petView: PetView?
     private var activityReader: CodexActivityReader?
     private var pollTimer: Timer?
-    private var expressionTimer: Timer?
     private var microActionTimer: Timer?
     private var smallActionTimer: Timer?
     private var largeActionTimer: Timer?
@@ -482,7 +480,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var waitingMicroSuiteCursor = 0
     private var workingLargeSuiteCursor = 0
     private var waitingLargeSuiteCursor = 0
-    private var expressionCursor = 0
+    private var hoverSuiteCursor = 0
     private let ambientPolicy = PetAmbientActionPolicy()
     private let actionCatalog = PetActionCatalog()
     private let actionTimeline = PetActionTimeline()
@@ -577,22 +575,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func scheduleAllSchedulers(initialDelay: Bool = false) {
-        scheduleExpressionAction(initialDelay: initialDelay)
         scheduleMicroAction(initialDelay: initialDelay)
         scheduleSmallAction(initialDelay: initialDelay)
         scheduleLargeAction(initialDelay: initialDelay)
-    }
-
-    private func scheduleExpressionAction(initialDelay: Bool = false) {
-        expressionTimer?.invalidate()
-        guard !isDragging else {
-            return
-        }
-
-        let interval = expressionInterval(initialDelay: initialDelay)
-        expressionTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
-            self?.requestNextAction(kind: .expression)
-        }
     }
 
     private func scheduleMicroAction(initialDelay: Bool = false) {
@@ -651,7 +636,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             scheduleAction(kind: kind)
             return
         }
-        if (kind == .expression || kind == .micro),
+        if kind == .micro,
            activeActionLayer != nil,
            activeActionLayer != actionLayer(for: kind) {
             scheduleAction(kind: kind)
@@ -744,8 +729,6 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         switch finishedKind {
-        case .expression:
-            scheduleExpressionAction()
         case .micro:
             scheduleMicroAction()
         case .small:
@@ -761,13 +744,6 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func nextSuite(kind: PetSchedulerKind) -> [PetAnimation] {
         switch kind {
-        case .expression:
-            let animations = actionCatalog.animations(for: currentStatus, layer: .expression)
-            guard !animations.isEmpty else {
-                return []
-            }
-            defer { expressionCursor += 1 }
-            return [animations[expressionCursor % animations.count]]
         case .micro:
             return nextActionSuite(from: ambientPolicy.microActionSuites(for: currentStatus), kind: kind)
         case .small:
@@ -806,15 +782,13 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         case (.waiting, .large):
             defer { waitingLargeSuiteCursor += 1 }
             return suites[waitingLargeSuiteCursor % suites.count]
-        case (.offline, .large), (.offline, .micro), (_, .expression), (_, .interaction):
+        case (.offline, .large), (.offline, .micro), (_, .interaction):
             return suites[0]
         }
     }
 
     private func scheduleAction(kind: PetSchedulerKind) {
         switch kind {
-        case .expression:
-            scheduleExpressionAction()
         case .micro:
             scheduleMicroAction()
         case .small:
@@ -827,8 +801,6 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func stopScheduledAndActiveActions() {
-        expressionTimer?.invalidate()
-        expressionTimer = nil
         microActionTimer?.invalidate()
         microActionTimer = nil
         smallActionTimer?.invalidate()
@@ -869,14 +841,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func hoverSuite() -> [PetAnimation] {
-        switch currentStatus {
-        case .working:
-            return [.curiousLook, .cursorLook, .hoverSmile]
-        case .waiting:
-            return [.curiousLook, .cursorLook, .hoverSmile]
-        case .offline:
-            return [.failed]
+        let suites = ambientPolicy.hoverActionSuites(for: currentStatus)
+        guard !suites.isEmpty else {
+            return []
         }
+        defer { hoverSuiteCursor += 1 }
+        return suites[hoverSuiteCursor % suites.count]
     }
 
     private func beginContextMenuAttention() {
@@ -908,11 +878,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         case (.offline, .waiting):
             return [.wakeUp]
         case (.working, .waiting):
-            return [.relaxFace]
+            return [.shoulderRelax]
         case (.offline, .working):
-            return [.wakeUp, .focusTighten]
+            return [.wakeUp, .adjustGlasses]
         case (_, .working):
-            return [.focusTighten]
+            return [.adjustGlasses]
         case (_, .waiting):
             return [.wakeUp]
         }
@@ -932,8 +902,6 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func actionLayer(for kind: PetSchedulerKind) -> PetActionLayer? {
         switch kind {
-        case .expression:
-            return .expression
         case .micro:
             return .micro
         case .small:
@@ -942,21 +910,6 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             return .large
         case .interaction:
             return .interaction
-        }
-    }
-
-    private func expressionInterval(initialDelay: Bool) -> TimeInterval {
-        if initialDelay {
-            return TimeInterval.random(in: 2.5...5.0)
-        }
-
-        switch currentStatus {
-        case .offline:
-            return TimeInterval.random(in: 45.0...90.0)
-        case .working:
-            return TimeInterval.random(in: 4.0...9.0)
-        case .waiting:
-            return TimeInterval.random(in: 3.0...8.0)
         }
     }
 

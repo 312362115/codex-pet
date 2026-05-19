@@ -42,25 +42,23 @@ CodexActivityReader
 
 ## 动作策略
 
-当前动作被分为基础姿态、表情动作、小动作、中/大动作、交互动作和调试动作，并通过统一时间线处理冲突：
+当前动作被分为基础姿态、微动作、小动作、中/大动作、交互动作和调试动作，并通过统一时间线处理冲突。表情不再作为独立 runtime 层调度，而是作为动作 clip 自带的语义和画面内容：
 
 | 类型 | 策略 |
 |------|------|
 | 静止态 | `working -> review`，`waiting -> waiting`，`offline -> failed`。 |
-| 表情动作 | `blink`、`slow-blink`、`eye-shift-left/right`、`focus-tighten`、`small-smile` 等，由独立 timer 调度。 |
 | 微动作 | `breathing`、`hair-sway`、`weight-shift`、`shoulder-relax`、`tiny-hand-adjust`，由独立 timer 低干扰插入。 |
-| 小动作 | 工作态轮换 `adjust-glasses`、`thinking`、`nod`、`tap-keyboard`、`check-notes`、`stretch-wrist`；等待态轮换 `waving`、`small-smile`、`slow-blink`。 |
+| 小动作 | 工作态轮换 `adjust-glasses`、`thinking`、`nod`、`tap-keyboard`、`check-notes`、`stretch-wrist`；等待态轮换 `waving`。这些动作后续应自带合适表情。 |
 | 中/大动作 | 工作态轮换 `glance-left/right`、`focus-shift`、`fix-posture`、`posture-reset`、`stretch`；等待态低频加入 `adjust-outfit`、`look-around`、`step-aside`。 |
-| 交互动作 | hover 触发 `curious-look -> cursor-look -> hover-smile`；右键触发 `context-menu-attend`；drag 释放触发 `drag-release-settle`。 |
+| 交互动作 | hover 按状态轮换短反馈：working 使用 `cursor-look`、`focus-shift`、`nod`，waiting 使用 `cursor-look`、`waving`；右键触发 `context-menu-attend`；drag 释放触发 `drag-release-settle`。 |
 | 调试动作 | `turning` 只保留为调试/素材检查，不进入默认调度。 |
 
 所有动作都不连续 loop，播完回到当前状态的静止态。
 
-调度器拆分为四类 timer 和一类事件触发：
+调度器拆分为三类 timer 和一类事件触发：
 
 | 调度器 | 运行节奏 | 冲突策略 |
 |--------|----------|----------|
-| 表情调度 | working `4-9s`，waiting `3-8s`，offline `45-90s` | runtime 暂不做图层 overlay，主动作播放时表情延后。 |
 | 微动作调度 | working `6-14s`，waiting `7-16s` | 微动作是最低干扰 ambient；主动作到点时可被更明显动作打断。 |
 | 小动作调度 | working `12-30s`，waiting `10-25s` | 小动作可短暂排队，状态变化或交互时丢弃。 |
 | 大动作调度 | working `120-210s`，waiting `90-180s` | 只在空窗执行，忙碌、hover、状态刚切换时丢弃。 |
@@ -70,13 +68,8 @@ CodexActivityReader
 
 | 动作 | 帧数 | 说明 |
 |------|------|------|
-| `blink` | 5 | 极短表情 clip。 |
-| `slow-blink` | 8 | 等待态慢眨眼。 |
-| `eye-shift-left/right` | 8 | 眼神短暂扫动。 |
-| `focus-tighten` | 12 | 进入工作态的专注表情过渡。 |
-| `small-smile` | 12 | 轻交互或等待态正反馈。 |
-| `hover-smile` | 12 | hover 专用轻微微笑。 |
-| `context-menu-attend` | 12 | 右键菜单打开时的关注反馈。 |
+| `blink` / `slow-blink` / `eye-shift-left/right` | 5-8 | 旧表情 clip 资产保留，但不进入默认独立调度。 |
+| `focus-tighten` / `small-smile` / `hover-smile` / `context-menu-attend` | 12 | 旧表情/交互 clip 资产保留；后续应改为动作立绘自带表情。 |
 | `breathing` | 12 | 低干扰呼吸微动作。 |
 | `hair-sway` | 12 | 头发/整体轮廓轻摆。 |
 | `weight-shift` | 16 | waiting 重心变化。 |

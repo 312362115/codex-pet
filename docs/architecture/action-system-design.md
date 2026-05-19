@@ -35,9 +35,9 @@ premultiplied-alpha 整帧补间适合轮廓变化小的动作，例如眨眼、
 
 ## 当前落地状态
 
-本轮已完成 clip-based 动作调度体系：`PetActionCatalog` 负责动作层级、优先级、可用状态、表情语义和冷却描述；`PetActionTimeline` 负责冲突决策；runtime 拆分为表情、微动作、小动作、大动作和交互调度器；默认主动作都有 PNG 帧目录、帧数策略、时长策略和状态逻辑回归。
+本轮已完成 clip-based 动作调度体系：`PetActionCatalog` 负责动作层级、优先级、可用状态、表情语义和冷却描述；`PetActionTimeline` 负责冲突决策；runtime 拆分为微动作、小动作、大动作和交互调度器；默认主动作都有 PNG 帧目录、帧数策略、时长策略和状态逻辑回归。
 
-脸部表情视觉层仍未完成。固定坐标整帧绘制已经判定为不适合正式方向，后续 TODO 记录在 [脸部表情暂停与后续 TODO](../decisions/2026-05-19-expression-overlay-todo.md)。局部脸部、头发、手臂 overlay 和每个大动作专门绘制真实关键帧，仍属于下一轮素材结构升级。
+脸部表情不再按独立 overlay 推进。当前决策是 [动作立绘自带表情方案](../decisions/2026-05-19-baked-action-expression.md)：每个动作 clip 自带适合该动作语义的表情，`PetExpression` 作为动作资产的语义标签保留，不表示 runtime 独立图层。
 
 ## 角色行为模型
 
@@ -46,7 +46,7 @@ premultiplied-alpha 整帧补间适合轮廓变化小的动作，例如眨眼、
 ```text
 Codex 状态
   -> 基础姿态层 Pose
-  -> 表情层 Expression
+  -> 表情语义 Expression
   -> 微动作层 Micro Motion
   -> 主动作层 Action
   -> 交互反馈层 Interaction
@@ -55,12 +55,12 @@ Codex 状态
 | 层 | 职责 | 是否常驻 | 是否可叠加 | 示例 |
 |----|------|----------|------------|------|
 | Pose | 当前状态的基础身体姿态 | 是 | 否 | `review`、`waiting`、`failed` |
-| Expression | 脸部、眼神、情绪 | 是 | 可叠加 | `focused`、`curious`、`happy`、`tired` |
-| Micro Motion | 很轻的生命感 | 是 | 可叠加 | 眨眼、呼吸、眼神扫动、头发轻摆 |
+| Expression | 动作自带的脸部、眼神、情绪语义 | 否 | 不叠加 | `focused`、`curious`、`happy`、`tired` |
+| Micro Motion | 很轻的生命感 | 是 | 可叠加 | 呼吸、重心微移、头发轻摆 |
 | Action | 有明确开始和结束的动作 | 否 | 一般互斥 | 挥手、扶眼镜、看向侧边、伸展 |
 | Interaction | 用户触发的反馈 | 否 | 高优先级 | hover 看向光标、拖动暂停、右键关注 |
 
-这套模型的关键是：基础姿态和表情常驻，动作只是短暂插入。动作结束后必须自然回到当前状态的基础姿态和表情，而不是停在动作中间。
+这套模型的关键是：基础姿态常驻，动作短暂插入，表情由当前姿态或动作 clip 自带。动作结束后必须自然回到当前状态的基础姿态，而不是停在动作中间。
 
 ## 表情体系
 
@@ -81,23 +81,20 @@ Codex 状态
 
 | 动作 | 类型 | 频率 | 时长 | 说明 |
 |------|------|------|------|------|
-| `blink` | 微动作 | `3-8s` 随机 | `0.12-0.25s` | 最基础生命感，应独立于主动作。 |
-| `slow-blink` | 微动作 | `20-45s` | `0.4-0.8s` | 等待态更常见，表达放松或疲惫。 |
-| `eye-shift-left/right` | 微动作 | `8-20s` | `0.4-0.9s` | 视线扫动，不移动全身。 |
-| `smile-in/out` | 表情过渡 | 交互触发 | `0.6-1.2s` | hover 或用户唤起后的轻微正反馈。 |
-| `focus-tighten` | 表情过渡 | working 进入 | `0.4-0.8s` | 从 neutral 到 focused。 |
-| `relax-face` | 表情过渡 | working 退出 | `0.6-1.0s` | 从 focused 回 neutral/waiting。 |
+| `blink`、`slow-blink` | 旧表情 clip | 暂不默认调度 | `0.12-0.8s` | 资产保留，后续优先烘焙进基础姿态或动作 clip。 |
+| `eye-shift-left/right` | 旧表情 clip | 暂不默认调度 | `0.4-0.9s` | 不再作为独立调度层；视线变化随 `cursor-look`、`glance` 等动作画入。 |
+| `small-smile`、`focus-tighten`、`relax-face` | 旧表情过渡 | 暂不默认调度 | `0.6-1.2s` | 语义保留，视觉效果改为动作立绘自带表情。 |
 
 ### 技术建议
 
-短期可以继续使用整帧 PNG 序列，但表情动作应该优先尝试局部资产：
+短期继续使用整帧 PNG 序列，但表情不拆独立图层。每个动作 clip 选择一种最合适的表情并直接画入帧中：
 
 - 眼睛：open、half、closed、look-left、look-right。
 - 眉眼：neutral、focused、curious、tired。
 - 嘴部：neutral、small-smile、thinking、error。
 - 头部：正面、微左、微右、低头、抬头。
 
-中期应将脸部拆成独立图层或局部贴图，避免每次眨眼都重新生成完整身体帧。
+只有当动作数量和表情组合明显膨胀时，才重新评估局部分层；当前阶段先避免 runtime 合成复杂度。
 
 ## 姿态体系
 
@@ -125,17 +122,17 @@ Codex 状态
 
 ## 动作库设计
 
-### 表情与眼神
+### 动作内表情语义
 
-| 动作 | 层级 | 触发 | 说明 |
-|------|------|------|------|
-| `blink` | 表情动作 | 随机 | 普通眨眼。 |
-| `slow-blink` | 表情动作 | 长时间等待 | 慢眨眼，表达放松。 |
-| `eye-shift-left/right` | 表情动作 | 随机或 hover 预备 | 只动视线，不动身体。 |
-| `focus-tighten` | 表情动作 | 进入 working | 眼神变专注。 |
-| `curious-look` | 表情动作 | hover | 眼睛略睁，视线朝用户。 |
-| `small-smile` | 表情动作 | 轻交互 | 短暂微笑，不持续太久。 |
-| `tired-soften` | 表情动作 | waiting 超过阈值 | 眼皮降低，恢复时慢慢回 neutral。 |
+| 动作 | 推荐表情 | 触发 | 说明 |
+|------|----------|------|------|
+| `review` | `focused` | working 基础姿态 | 眼神专注，不夸张。 |
+| `adjust-glasses` | `focused` | working | 符合审阅/处理语义。 |
+| `thinking`、`check-notes` | `thinking` | working | 视线和嘴部更收敛。 |
+| `waving` | `happy` 或 `curious` | waiting、轻交互 | 正反馈动作，表情可以更明确。 |
+| `cursor-look` | `curious` | hover | 看向用户，不完整转身。 |
+| `weight-shift`、`shoulder-relax`、`stretch` | `neutral` 或 `tired` | 长等待或舒展 | 不做强情绪。 |
+| `failed` | `error` | offline | 低干扰地表达不可用。 |
 
 ### 微动作
 
@@ -183,7 +180,7 @@ Codex 状态
 | 动作 | 触发 | 优先级 | 说明 |
 |------|------|--------|------|
 | `cursor-look` | 鼠标悬停 | 高 | 视线/头部看向光标，不完整转身。 |
-| `hover-smile` | 鼠标悬停持续 | 中 | 停留一小段时间后轻微微笑。 |
+| `hover-smile` | 鼠标悬停持续 | 中 | 旧交互 clip，默认 hover 先用 `cursor-look`。 |
 | `drag-freeze` | 拖动开始 | 最高 | 暂停动画，避免拖动时动作漂移。 |
 | `drag-release-settle` | 拖动结束 | 高 | 回到基础姿态，必要时做轻微整理。 |
 | `context-menu-attend` | 右键菜单 | 高 | 角色短暂停止并看向用户。 |
@@ -195,10 +192,10 @@ Codex 状态
 
 | 状态 | 表情 | 基础姿态 | 微动作 | 小动作 | 中动作 | 大动作 |
 |------|------|----------|--------|--------|--------|--------|
-| `working` | `focused`、`thinking` | `review` | `blink`、`eye-shift`、`breathing` | `adjust-glasses`、`nod`、`tap-keyboard`、`check-notes` | `focus-shift`、`glance-left/right`、`fix-posture` | `stretch` 极低频 |
-| `waiting` | `neutral`、`curious`、长等待 `tired` | `waiting`、`idle-relaxed` | `blink`、`slow-blink`、`weight-shift`、`tiny-hand-adjust` | `waving`、`small-smile` | `glance-left/right`、`adjust-outfit`、`look-around` | `stretch`、`step-aside` 极低频 |
+| `working` | 动作自带 `focused`、`thinking` | `review` | `breathing`、`tiny-hand-adjust`、`hair-sway` | `adjust-glasses`、`nod`、`tap-keyboard`、`check-notes` | `focus-shift`、`glance-left/right`、`fix-posture` | `stretch` 极低频 |
+| `waiting` | 动作自带 `neutral`、`curious`、长等待 `tired` | `waiting`、`idle-relaxed` | `weight-shift`、`shoulder-relax`、`tiny-hand-adjust` | `waving` | `glance-left/right`、`adjust-outfit`、`look-around` | `stretch`、`step-aside` 极低频 |
 | `offline` | `error`、`tired` | `failed` | 很少或无 | 无 | `wake-up` 只在恢复时 | 无 |
-| hover | `curious`、`happy` | 当前姿态 | 暂停普通随机微动作 | `hover-smile` | `cursor-look` | 不触发完整转身 |
+| hover | 动作自带 `curious`、`happy` | 当前姿态 | 暂停普通随机微动作 | `waving` / `nod` | `cursor-look` / `focus-shift` | 不触发完整转身 |
 | drag | 保持当前表情 | 当前帧冻结 | 无 | 无 | `drag-release-settle` | 无 |
 
 ## 动作组合语法
@@ -208,16 +205,15 @@ Codex 状态
 ### 组合结构
 
 ```text
-entry cue -> expression shift -> micro motion -> main action -> settle -> base loop
+entry cue -> micro motion -> main action with expression -> settle -> base loop
 ```
 
 | 位置 | 作用 | 可省略 | 示例 |
 |------|------|--------|------|
-| `entry cue` | 进入组合的引子，让动作不突兀 | 可省略 | `eye-shift-right`、`focus-tighten` |
-| `expression shift` | 表达情绪或注意力变化 | 不建议省略 | `neutral -> curious`、`neutral -> focused` |
-| `micro motion` | 让动作有呼吸和生命感 | 可省略 | `blink`、`breathing`、`hair-sway` |
-| `main action` | 组合的核心动作 | 不可省略 | `adjust-glasses`、`cursor-look`、`glance-left` |
-| `settle` | 回到当前状态，不停在峰值 | 不可省略 | `relax-face`、`shoulder-relax` |
+| `entry cue` | 进入组合的引子，让动作不突兀 | 可省略 | `breathing`、`tiny-hand-adjust` |
+| `micro motion` | 让动作有呼吸和生命感 | 可省略 | `breathing`、`hair-sway` |
+| `main action with expression` | 组合的核心动作，动作帧自带表情 | 不可省略 | `adjust-glasses(focused)`、`cursor-look(curious)`、`waving(happy)` |
+| `settle` | 回到当前状态，不停在峰值 | 不可省略 | `shoulder-relax`、`fix-posture` |
 | `base loop` | 回到基础姿态和常驻微动作 | 不可省略 | `review + focused`、`waiting + neutral` |
 
 组合的时长应短而明确：普通组合 `1.2-3.0s`，低频大组合 `3.0-5.0s`。如果一个组合超过 5 秒，通常应该拆成两个组合。
@@ -226,10 +222,10 @@ entry cue -> expression shift -> micro motion -> main action -> settle -> base l
 
 | 组合层 | 可叠加 | 不应叠加 |
 |--------|--------|----------|
-| 表情 + 基础姿态 | 可以 | 表情不能和当前状态矛盾，例如 offline 时不持续 `happy`。 |
-| 眨眼 + 呼吸 | 可以 | 主动作峰值期间暂停眨眼，避免眼睛姿态穿帮。 |
-| 视线 + 头部轻偏 | 可以 | 不要同时做反方向视线和头部，例如头向左但眼向右。 |
-| 小动作 + 表情变化 | 可以 | 不要同时播放两个小动作，例如挥手同时扶眼镜。 |
+| 表情 + 基础姿态 | 随姿态资产 | 表情不能和当前状态矛盾，例如 offline 时不持续 `happy`。 |
+| 眨眼 + 呼吸 | 暂不独立组合 | 后续烘焙进基础姿态或轻动作。 |
+| 视线 + 头部轻偏 | 随动作资产 | 不要同时做反方向视线和头部，例如头向左但眼向右。 |
+| 小动作 + 表情变化 | 随动作资产 | 不要同时播放两个小动作，例如挥手同时扶眼镜。 |
 | 中动作 + 微动作 | 部分可以 | 中动作不叠加大幅呼吸或重心变化，避免轮廓漂移。 |
 | 大动作 + 其他动作 | 基本不可以 | 大动作期间只保留必要表情，不叠加其他主动作。 |
 
@@ -239,11 +235,11 @@ entry cue -> expression shift -> micro motion -> main action -> settle -> base l
 
 | 组合名 | 动作短句 | 使用场景 | 表达想法 | 频率建议 |
 |--------|----------|----------|----------|----------|
-| `work-enter` | `waiting + neutral -> focus-tighten -> review + focused` | Codex 从等待进入工作 | “收到任务，开始专注处理。” | 状态切换时触发 |
-| `focused-review` | `review + focused -> blink -> eye-shift-down -> review` | 工作态常驻 | “正在看内容/审阅。” | 常驻循环 |
-| `adjust-and-continue` | `review -> eye-shift-down -> adjust-glasses -> small nod -> review` | 工作中小动作 | “认真检查，继续推进。” | `12-30s` |
-| `thinking-pause` | `review -> thinking -> eye-shift-up -> tiny-hand-adjust -> focused` | 工作中短暂停顿 | “在思考下一步。” | `20-45s` |
-| `work-done` | `focused -> slow blink -> shoulder-relax -> waiting + neutral` | 工作结束/活动变少 | “这轮处理结束，回到等待。” | 状态切换时触发 |
+| `work-enter` | `waiting -> adjust-glasses(focused) -> review(focused)` | Codex 从等待进入工作 | “收到任务，开始专注处理。” | 状态切换时触发 |
+| `focused-review` | `review(focused) -> breathing -> review(focused)` | 工作态常驻 | “正在看内容/审阅。” | 常驻循环 |
+| `adjust-and-continue` | `review -> adjust-glasses(focused) -> nod(focused) -> review` | 工作中小动作 | “认真检查，继续推进。” | `12-30s` |
+| `thinking-pause` | `review -> thinking(thinking) -> tiny-hand-adjust -> review(focused)` | 工作中短暂停顿 | “在思考下一步。” | `20-45s` |
+| `work-done` | `review(focused) -> shoulder-relax(neutral) -> waiting(neutral)` | 工作结束/活动变少 | “这轮处理结束，回到等待。” | 状态切换时触发 |
 
 `working` 组合要避免过度活泼。工作态的动作应该更小、更利落，强调专注和可靠，不应频繁挥手或大幅移动。
 
@@ -251,11 +247,11 @@ entry cue -> expression shift -> micro motion -> main action -> settle -> base l
 
 | 组合名 | 动作短句 | 使用场景 | 表达想法 | 频率建议 |
 |--------|----------|----------|----------|----------|
-| `calm-wait` | `waiting + neutral -> breathing -> blink -> waiting` | 等待态常驻 | “安静待命。” | 常驻循环 |
-| `soft-greeting` | `waiting -> curious -> small-smile -> waving -> neutral` | 用户回来或轻交互 | “我在这里，有事可以叫我。” | hover 后或低频 |
-| `look-around-light` | `waiting -> eye-shift-left -> glance-left -> blink -> waiting` | 普通等待中动作 | “短暂看向旁边，又回到待命。” | `25-60s` |
-| `long-wait-tired` | `waiting -> slow-blink -> tired-soften -> weight-shift -> idle-relaxed` | 长时间无交互 | “等久了，有点放松/困。” | `90s+` |
-| `ready-again` | `idle-relaxed + tired -> eye-shift-up -> neutral -> idle-alert` | 长等待后用户回来 | “重新注意到用户。” | hover 或活动恢复 |
+| `calm-wait` | `waiting(neutral) -> breathing -> waiting(neutral)` | 等待态常驻 | “安静待命。” | 常驻循环 |
+| `soft-greeting` | `waiting -> waving(happy/curious) -> waiting(neutral)` | 用户回来或轻交互 | “我在这里，有事可以叫我。” | hover 后或低频 |
+| `look-around-light` | `waiting -> glance-left(curious) -> waiting(neutral)` | 普通等待中动作 | “短暂看向旁边，又回到待命。” | `25-60s` |
+| `long-wait-tired` | `waiting(tired) -> weight-shift(tired) -> idle-relaxed` | 长时间无交互 | “等久了，有点放松/困。” | `90s+` |
+| `ready-again` | `idle-relaxed(tired) -> cursor-look(curious) -> waiting(neutral)` | 长等待后用户回来 | “重新注意到用户。” | hover 或活动恢复 |
 
 `waiting` 可以比 `working` 更有生活感，但仍要低干扰。挥手不应作为默认高频动作，否则会像提示动画而不是陪伴。
 
@@ -263,9 +259,9 @@ entry cue -> expression shift -> micro motion -> main action -> settle -> base l
 
 | 组合名 | 动作短句 | 使用场景 | 表达想法 | 优先级 |
 |--------|----------|----------|----------|--------|
-| `hover-attend` | `current pose -> curious-look -> cursor-look -> hover-smile hold` | 鼠标悬停 | “注意到用户了。” | P1 |
-| `hover-release` | `cursor-look -> blink -> neutral/focused -> current base pose` | 鼠标离开 | “回到原来的状态。” | P1 |
-| `context-menu-attend` | `current pose -> eye-shift-user -> freeze with curious` | 右键菜单打开 | “正在等待用户选择。” | P1 |
+| `hover-attend` | working: `cursor-look/focus-shift/nod`；waiting: `cursor-look/waving` | 鼠标悬停 | “注意到用户了。” | P1 |
+| `hover-release` | `cursor-look -> current base pose` | 鼠标离开 | “回到原来的状态。” | P1 |
+| `context-menu-attend` | `current pose -> context-menu-attend(curious)` | 右键菜单打开 | “正在等待用户选择。” | P1 |
 | `drag-start` | `current frame -> drag-freeze` | 拖动开始 | “被用户拿起，动作暂停。” | P0 |
 | `drag-end` | `drag-freeze -> drag-release-settle -> current base pose` | 拖动结束 | “站稳并回到状态。” | P0 |
 
@@ -275,9 +271,9 @@ entry cue -> expression shift -> micro motion -> main action -> settle -> base l
 
 | 组合名 | 动作短句 | 使用场景 | 表达想法 | 频率建议 |
 |--------|----------|----------|----------|----------|
-| `offline-rest` | `failed + error -> slow-blink very rare` | Codex 离线 | “暂时不可用，低干扰。” | 极低 |
+| `offline-rest` | `failed(error)` | Codex 离线 | “暂时不可用，低干扰。” | 极低 |
 | `wake-up` | `failed + error -> surprised -> neutral -> waiting` | Codex 恢复运行 | “恢复在线，重新待命。” | 状态切换时触发 |
-| `activity-spike` | `waiting -> surprised -> focus-tighten -> review` | 突然进入工作 | “检测到活动，开始处理。” | 状态切换时触发 |
+| `activity-spike` | `waiting -> adjust-glasses(focused) -> review` | 突然进入工作 | “检测到活动，开始处理。” | 状态切换时触发 |
 
 离线态不做丰富 ambient。离线时动作越多，越容易让用户误解为系统还在活跃工作。
 
@@ -285,9 +281,9 @@ entry cue -> expression shift -> micro motion -> main action -> settle -> base l
 
 | 组合名 | 动作短句 | 使用场景 | 表达想法 | 限制 |
 |--------|----------|----------|----------|------|
-| `posture-reset` | `base pose -> fix-posture -> relax-face -> base pose` | 长时间没有主动作 | “调整一下站姿。” | `60s+` 冷却 |
+| `posture-reset` | `base pose -> fix-posture(neutral/focused) -> base pose` | 长时间没有主动作 | “调整一下站姿。” | `60s+` 冷却 |
 | `look-around` | `waiting -> glance-left -> neutral -> glance-right -> waiting` | 长等待 | “轻微环顾环境。” | 不展示背面 |
-| `stretch-light` | `idle-relaxed -> stretch-wrist/shoulder -> slow-blink -> idle-relaxed` | 很长等待或工作后 | “轻微舒展。” | `120s+` 冷却 |
+| `stretch-light` | `idle-relaxed -> stretch-wrist/shoulder(tired) -> idle-relaxed` | 很长等待或工作后 | “轻微舒展。” | `120s+` 冷却 |
 
 低频存在感组合要稀有。它们用于打破长时间静止，不应该抢用户注意力。
 
@@ -321,7 +317,7 @@ entry cue -> expression shift -> micro motion -> main action -> settle -> base l
 |----------|----------|----------|
 | `working`，刚进入状态 | `work-enter` | `focus-tighten -> review + focused` |
 | `working`，空闲 20 秒 | `adjust-and-continue` | `eye-shift-down -> adjust-glasses -> nod` |
-| `waiting`，用户 hover | `hover-attend` | `curious-look -> cursor-look -> hover-smile` |
+| `waiting`，用户 hover | `hover-attend` | `cursor-look` 或 `waving` |
 | `waiting`，长时间无活动 | `long-wait-tired` | `slow-blink -> tired-soften -> weight-shift` |
 | `offline -> waiting` | `wake-up` | `surprised -> neutral -> waiting` |
 
@@ -356,13 +352,12 @@ rest pose -> anticipation -> action peak -> settle -> rest pose
 
 ## 调度规则
 
-动作系统需要多个调度器协同，而不是一个 timer 随机挑动作。推荐拆成四类调度器：表情/微动作调度器、小动作调度器、大动作调度器、交互调度器。它们共享同一个 timeline 和动作锁，避免时间冲突。
+动作系统需要多个调度器协同，而不是一个 timer 随机挑动作。当前拆成微动作调度器、小动作调度器、大动作调度器、交互调度器。它们共享同一个 timeline 和动作锁，避免时间冲突。表情由被调度动作的 clip 自带，不再单独占用一个调度器。
 
 ### 调度器分工
 
 | 调度器 | 管理内容 | 触发方式 | 默认节奏 | 能否打断其他动作 |
 |--------|----------|----------|----------|------------------|
-| `ExpressionScheduler` | 眨眼、视线、表情过渡 | 随机 + 状态切换 | `3-20s` | 只打断同类表情动作。 |
 | `MicroMotionScheduler` | 呼吸、头发、重心微移 | 常驻 loop + 随机 | `0.8-8s` | 不打断主动作，主动作峰值时暂停。 |
 | `SmallActionScheduler` | 挥手、点头、扶眼镜、轻敲 | 状态随机 | `6-12s` | 不打断交互和大动作，可等待主动作空窗。 |
 | `LargeActionScheduler` | 伸展、look-around、姿态切换 | 长冷却随机 | `60-180s` | 不主动打断，只在空闲窗口执行。 |
@@ -436,7 +431,7 @@ Scheduler Request
 
 - 同一个动作短时间内不能重复，默认冷却 `30-90s`。
 - 同层动作互斥：主动作播放时不再启动另一个主动作。
-- 表情动作可以叠加，但主动作峰值期间暂停眨眼，避免表情穿帮。
+- 表情随动作资产一起播放，不叠加独立脸部动作，避免主动作峰值期间穿帮。
 - 大动作必须检查用户是否正在拖动、hover、或 Codex 状态是否刚变化。
 - 长时间 waiting 才允许 `tired` 表情和 `slow-blink` 增多。
 
@@ -453,7 +448,6 @@ Scheduler Request
 
 | 调度器 | 工作态节奏 | 等待态节奏 | 离线态节奏 |
 |--------|------------|------------|------------|
-| 表情 | `blink 4-9s`，`eye-shift 8-18s` | `blink 3-8s`，`slow-blink 20-45s` | `slow-blink 45-90s` 或无 |
 | 微动作 | 呼吸常驻，手部小调整 `20-45s` | 呼吸常驻，重心变化 `12-30s` | 基本暂停 |
 | 小动作 | `12-30s`，偏专注动作 | `10-25s`，偏招呼和等待动作 | 不播放 |
 | 大动作 | `120s+`，且只在长时间稳定工作后 | `90-180s`，长等待才允许 | 不播放 |
@@ -552,7 +546,7 @@ assets/lingxi-ol-hires/
 
 | 动作类型 | 可用整帧补间 | 推荐方式 |
 |----------|--------------|----------|
-| 眨眼、嘴部微笑 | 不推荐长期使用 | 局部脸部图层。 |
+| 眨眼、嘴部微笑 | 不推荐作为独立补间 | 直接烘焙进对应动作立绘。 |
 | 小幅挥手、点头 | 可用 | 整帧补间 + 真实峰值帧。 |
 | 头部/肩膀轻偏 | 勉强可用 | 最好生成真实中间帧。 |
 | 转身、走动、伸展 | 不推荐 | 真实关键帧或分层骨骼/部件动画。 |
@@ -632,9 +626,9 @@ AI 插帧输出必须经过人工或脚本验收，合格后作为生成素材�
 
 | 动作 | 推荐算法 | 不推荐 |
 |------|----------|--------|
-| `blink`、`slow-blink` | 局部眼睛贴图切换/补间 | 整帧 ML 插帧 |
-| `small-smile`、`focus-tighten` | 局部脸部图层补间 | 整帧 crossfade |
-| `eye-shift` | 眼睛/瞳孔局部位移 | 全身补间 |
+| `blink`、`slow-blink` | 烘焙进基础姿态或轻动作关键帧 | 整帧 ML 插帧 |
+| `small-smile`、`focus-tighten` | 烘焙进 `waving`、`cursor-look`、`adjust-glasses` 等动作立绘 | 整帧 crossfade |
+| `eye-shift` | 烘焙进 `cursor-look`、`glance-left/right` 等注意力动作 | 全身补间 |
 | `adjust-glasses` | 真实峰值帧 + 局部手臂/眼镜补间 | 仅 crossfade |
 | `nod` | 头部局部旋转/mesh warp | 全身缩放 |
 | `glance-left/right` | 真实 15°/25° 关键帧 + 局部/flow 辅助 | 完整 turntable 插帧 |
@@ -739,22 +733,22 @@ ActionClip
 
 ### 与表情和组合的关系
 
-不能把所有表情和动作组合都烘焙成单个动图。否则资产数量会爆炸：
+不要把所有表情和动作组合都烘焙成单个动图，否则资产数量会爆炸：
 
 ```text
 20 个主动作 * 8 种表情 * 4 种视线方向 = 640 个组合 clip
 ```
 
-更合理的分层是：
+当前更合理的约束是：每个动作只配最合适的一种或少数几种表情，不做全量组合。
 
 | 层 | 是否烘焙到动作 clip | 原因 |
 |----|---------------------|------|
 | 身体主动作 | 是 | 动作轮廓和节奏需要整体设计。 |
-| 手臂/头部局部动作 | 视情况 | 小动作可以作为 clip，也可以作为 overlay。 |
-| 眨眼、视线、轻微表情 | 否 | 高频、可复用，应该独立调度和叠加。 |
+| 手臂/头部局部动作 | 是 | 当前先随动作立绘一起做，减少 runtime 复杂度。 |
+| 眨眼、视线、轻微表情 | 随动作烘焙 | 不单独 overlay；只给当前动作画最贴合语义的表情。 |
 | 状态底座姿态 | 否 | 作为 clip 的起止姿态，不重复烘焙。 |
 
-这意味着 `glance-left` 可以是一个身体 clip，但 `blink` 不应该烘焙进每一个 `glance-left` 版本里。`ActionTimeline` 播放主 clip 时，`ExpressionScheduler` 仍可在允许窗口内叠加眨眼或视线变化。
+这意味着 `glance-left`、`cursor-look`、`adjust-glasses` 等动作应直接带上对应表情；不要再额外启动 `ExpressionScheduler` 去叠脸。
 
 ### 调度影响
 
@@ -775,8 +769,8 @@ ActionClip
 | `glance-left/right` | 适合 | 比完整转身自然，clip 内控制角度。 |
 | `look-around` | 适合 | 中动作，需要完整节奏设计。 |
 | `review`、`waiting` | 适合循环 clip | 要求首尾无缝。 |
-| `blink` | 不适合作为主 clip | 应作为表情层 overlay。 |
-| 多表情组合动作 | 不适合全量烘焙 | 应由主 clip + 表情层组合。 |
+| `blink` | 暂不作为默认主 clip | 后续可烘焙进基础姿态或轻动作。 |
+| 多表情组合动作 | 不适合全量烘焙 | 每个动作只保留最合理的表情版本。 |
 
 ### 结论
 
@@ -792,11 +786,11 @@ ActionClip
 - 保留 `turntable` 作为调试动作。
 - 策略测试覆盖：默认动作池不包含完整转身。（已落地）
 
-### Phase 2：加入表情层
+### Phase 2：加入动作表情语义
 
 - 增加 `PetExpression` 概念。（已落地）
-- 支持 `blink`、`slow-blink`、`focus-tighten`、`small-smile` 的动作名和调度入口。（已落地；视觉表情层暂停重做）
-- 表情动作与主动作调度解耦。（已落地；runtime 暂不做图层 overlay，主动作期间表情延后）
+- `PetExpression` 作为动作资产语义标签保留，不表示 runtime 独立图层。（已落地）
+- `blink`、`slow-blink`、`focus-tighten`、`small-smile` 等旧表情 clip 保留为兼容资产，但不进入默认独立调度。（已落地）
 - working 使用 `focused`，waiting 使用 `neutral/curious/tired`，offline 使用 `error`。（已纳入 action catalog）
 
 ### Phase 3：丰富小动作和中动作
@@ -811,7 +805,7 @@ ActionClip
 - 短期保留扁平 PNG 目录，避免一次性迁移 runtime 资源结构。（已决定）
 - manifest 记录新增动作帧数。（已落地）
 - 动作层级、总时长、冷却、可用状态先由 `PetActionCatalog` 表达。（已落地）
-- 脸部、头部、手臂等局部图层拆分推迟到下一轮素材升级；脸部表情不再用整帧硬编码绘制补齐。
+- 脸部、头部、手臂等局部图层拆分不作为当前方向；脸部表情随动作立绘补齐，不再用整帧硬编码坐标绘制。
 
 ### Phase 5：高级动作
 
@@ -822,12 +816,12 @@ ActionClip
 ## 验收标准
 
 - 默认 3 分钟 ambient 中不出现完整 360° 转身。
-- hover 只触发 `cursor-look` 或轻表情反馈，不触发 `turntable`。
-- working 能看出专注状态：`review` 姿态、扶眼镜/点头/轻敲等小动作；`focused` 脸部表情待 overlay 补齐。
-- waiting 能看出等待状态：慢眨眼、挥手、重心变化；`neutral/curious/tired` 脸部表情待 overlay 补齐。
+- hover 只触发 `cursor-look` 等带好奇/正反馈表情的动作，不触发 `turntable`。
+- working 能看出专注状态：`review` 姿态、扶眼镜/点头/轻敲等小动作，动作立绘自带 `focused` 或 `thinking` 表情。
+- waiting 能看出等待状态：挥手、重心变化、舒展等动作，动作立绘自带 `neutral`、`curious` 或 `tired` 表情。
 - offline 保持低干扰，不频繁动。
 - 动作结束后都自然回到当前状态基础姿态。
-- 表情、微动作和主动作的调度关系有测试覆盖。
+- 独立表情动作不进入默认调度，微动作和主动作的调度关系有测试覆盖。
 - 调度冲突有测试覆盖：hover 打断 ambient、drag 打断全部、大动作在交互或状态切换时丢弃。
 - 大轮廓动作不使用整帧 crossfade 直接混合两个差异很大的姿态。
 
@@ -836,7 +830,7 @@ ActionClip
 不要继续围绕 `turning` 优化。默认动作体系已改为语义 clip 和分层调度：
 
 1. 移除默认完整转身。（已落地）
-2. 引入表情层调度入口，至少支持眨眼、专注、好奇、轻微微笑；视觉表情层暂停，后续按局部分层 overlay 重做。
+2. 引入动作表情语义，表情随动作立绘烘焙；独立表情调度已停用。
 3. 引入注意力转移动作：`glance-left/right`、`cursor-look`。（已落地）
 4. 引入更符合角色设定的小动作：`adjust-glasses`、`nod`、`check-notes`、`thinking`、`tap-keyboard`、`stretch-wrist`。（已落地）
 5. 将 `turntable` 明确放入 debug/asset review，不参与默认调度。（默认调度已移除）

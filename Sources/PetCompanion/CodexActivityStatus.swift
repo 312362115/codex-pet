@@ -147,14 +147,14 @@ public struct PetActionCatalog: Sendable {
         PetActionDescriptor(animation: .waiting, layer: .pose, priority: .p2, allowedStatuses: [.waiting], expressions: [.neutral], cooldown: 0...0, canQueue: false),
         PetActionDescriptor(animation: .review, layer: .pose, priority: .p2, allowedStatuses: [.working], expressions: [.focused], cooldown: 0...0, canQueue: false),
         PetActionDescriptor(animation: .failed, layer: .pose, priority: .p2, allowedStatuses: [.offline], expressions: [.error], cooldown: 0...0, canQueue: false),
-        PetActionDescriptor(animation: .blink, layer: .expression, priority: .p3, allowedStatuses: activeStatuses, expressions: [.neutral, .focused], cooldown: 3...8, canQueue: false),
-        PetActionDescriptor(animation: .slowBlink, layer: .expression, priority: .p3, allowedStatuses: [.waiting, .offline], expressions: [.tired, .neutral], cooldown: 20...45, canQueue: false),
-        PetActionDescriptor(animation: .eyeShiftLeft, layer: .expression, priority: .p3, allowedStatuses: activeStatuses, expressions: [.neutral, .focused, .curious], cooldown: 8...20, canQueue: false),
-        PetActionDescriptor(animation: .eyeShiftRight, layer: .expression, priority: .p3, allowedStatuses: activeStatuses, expressions: [.neutral, .focused, .curious], cooldown: 8...20, canQueue: false),
+        PetActionDescriptor(animation: .blink, layer: .expression, priority: .p3, allowedStatuses: activeStatuses, expressions: [.neutral, .focused], cooldown: 3...8, canQueue: false, defaultEligible: false),
+        PetActionDescriptor(animation: .slowBlink, layer: .expression, priority: .p3, allowedStatuses: [.waiting, .offline], expressions: [.tired, .neutral], cooldown: 20...45, canQueue: false, defaultEligible: false),
+        PetActionDescriptor(animation: .eyeShiftLeft, layer: .expression, priority: .p3, allowedStatuses: activeStatuses, expressions: [.neutral, .focused, .curious], cooldown: 8...20, canQueue: false, defaultEligible: false),
+        PetActionDescriptor(animation: .eyeShiftRight, layer: .expression, priority: .p3, allowedStatuses: activeStatuses, expressions: [.neutral, .focused, .curious], cooldown: 8...20, canQueue: false, defaultEligible: false),
         PetActionDescriptor(animation: .focusTighten, layer: .expression, priority: .p1, allowedStatuses: [.working], expressions: [.focused], cooldown: 8...18, canQueue: false, defaultEligible: false),
         PetActionDescriptor(animation: .relaxFace, layer: .expression, priority: .p1, allowedStatuses: [.waiting], expressions: [.neutral], cooldown: 8...18, canQueue: false, defaultEligible: false),
-        PetActionDescriptor(animation: .smallSmile, layer: .expression, priority: .p3, allowedStatuses: [.waiting], expressions: [.happy], cooldown: 25...60, canQueue: false),
-        PetActionDescriptor(animation: .tiredSoften, layer: .expression, priority: .p3, allowedStatuses: [.waiting], expressions: [.tired], cooldown: 60...120, canQueue: false),
+        PetActionDescriptor(animation: .smallSmile, layer: .expression, priority: .p3, allowedStatuses: [.waiting], expressions: [.happy], cooldown: 25...60, canQueue: false, defaultEligible: false),
+        PetActionDescriptor(animation: .tiredSoften, layer: .expression, priority: .p3, allowedStatuses: [.waiting], expressions: [.tired], cooldown: 60...120, canQueue: false, defaultEligible: false),
         PetActionDescriptor(animation: .curiousLook, layer: .expression, priority: .p1, allowedStatuses: activeStatuses, expressions: [.curious], cooldown: 10...20, canQueue: false, defaultEligible: false),
         PetActionDescriptor(animation: .breathing, layer: .micro, priority: .p3, allowedStatuses: activeStatuses, expressions: [.neutral, .focused], cooldown: 4...10, canQueue: false),
         PetActionDescriptor(animation: .hairSway, layer: .micro, priority: .p3, allowedStatuses: activeStatuses, expressions: [.neutral], cooldown: 12...30, canQueue: false),
@@ -496,9 +496,9 @@ public struct PetAmbientActionPolicy {
         case .offline:
             return []
         case .working:
-            return [[.breathing], [.eyeShiftLeft], [.eyeShiftRight], [.tinyHandAdjust], [.hairSway]]
+            return [[.breathing], [.tinyHandAdjust], [.hairSway]]
         case .waiting:
-            return [[.breathing], [.weightShift], [.eyeShiftLeft], [.eyeShiftRight], [.shoulderRelax], [.tinyHandAdjust], [.hairSway]]
+            return [[.breathing], [.weightShift], [.shoulderRelax], [.tinyHandAdjust], [.hairSway]]
         }
     }
 
@@ -517,9 +517,7 @@ public struct PetAmbientActionPolicy {
             ]
         case .waiting:
             return [
-                [.waving],
-                [.smallSmile],
-                [.slowBlink]
+                [.waving]
             ]
         }
     }
@@ -532,6 +530,17 @@ public struct PetAmbientActionPolicy {
             return [[.glanceLeft], [.glanceRight], [.focusShift], [.fixPosture], [.postureReset], [.stretch]]
         case .waiting:
             return [[.glanceLeft], [.glanceRight], [.adjustOutfit], [.lookAround], [.postureReset], [.stretch], [.stepAside]]
+        }
+    }
+
+    public func hoverActionSuites(for status: CodexActivityStatus) -> [[PetAnimation]] {
+        switch status {
+        case .offline:
+            return [[.failed]]
+        case .working:
+            return [[.cursorLook], [.focusShift], [.nod]]
+        case .waiting:
+            return [[.cursorLook], [.waving]]
         }
     }
 }

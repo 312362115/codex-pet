@@ -16,7 +16,7 @@
 
 ## 范围
 
-本轮完成“clip-based 动作调度体系”和默认动作池。脸部表情视觉表达暂不继续用整帧硬编码绘制方式实现；后续应按 [脸部表情暂停与后续 TODO](../decisions/2026-05-19-expression-overlay-todo.md) 做局部分层 overlay。表情调度和动作名可以保留，视觉表情层不能再被描述为已完整交付。
+本轮完成“clip-based 动作调度体系”和默认动作池。脸部表情不再作为独立 overlay 或独立高频调度层推进，后续按 [动作立绘自带表情方案](../decisions/2026-05-19-baked-action-expression.md) 把表情直接画进每个动作 clip。
 
 ## 阶段
 
@@ -24,8 +24,8 @@
 |------|------|------|
 | Phase 1 | 停用默认完整转身，新增 `glance-left/right` | done |
 | Phase 2 | 建立动作元数据、层级、优先级和时间线冲突决策 | done |
-| Phase 3 | 补齐微动作、小动作、中动作、大动作和交互 clip 资产；脸部表情视觉层转为 TODO | partial |
-| Phase 4 | runtime 接入表情/微动作/小动作/大动作/交互多调度器 | done |
+| Phase 3 | 补齐微动作、小动作、中动作、大动作和交互 clip 资产；脸部表情随动作立绘补齐 | partial |
+| Phase 4 | runtime 接入微动作/小动作/大动作/交互多调度器，停用独立表情调度 | done |
 | Phase 5 | 文档、验证和交付自检 | done |
 
 ## 当前实现约束
@@ -33,7 +33,7 @@
 - 不引入 runtime ML 插帧。
 - 不把正式资产做成 GIF。
 - 继续使用 PNG 帧目录，按需补 manifest。
-- 不继续用固定坐标在整帧 PNG 上硬画脸部表情；该方向已暂停。
+- 不继续用固定坐标在整帧 PNG 上硬画脸部表情；也不新增独立 `ExpressionRenderer`。
 - `swift test` 受当前命令行工具链缺少 `Testing` 模块影响，主要回归命令使用 `scripts/test-status-logic.sh`。
 
 ## 会话记录
@@ -42,7 +42,7 @@
 
 - 已完成：`glance-left/right` 短瞥动作、默认调度移除完整转身、资产生成和验证。
 - 已完成：动作 catalog、统一 timeline 冲突决策、微动作/小动作/中动作/大动作/交互 clip 资产、runtime 多调度器接入。
-- 已暂停：脸部表情视觉层。当前整帧硬编码绘制方案不作为正式方向，后续改为局部分层 overlay。
+- 已调整：脸部表情不做独立 overlay，改为动作立绘自带表情；独立表情调度已停用。
 - 已完成：微动作调度器、右键关注动作、hover 专用微笑、`stretch` / `step-aside` / `posture-reset` 等低频大动作接入。
 - 已完成：重建运行帧 772 张；`scripts/test-status-logic.sh` 通过；`scripts/build-app.sh` 通过；`scripts/install.sh --rebuild-assets` 完成安装并重启桌宠。
 - 已知环境问题：`swift test` 在当前命令行工具链缺少 Swift `Testing` 模块时失败，状态逻辑回归使用 `scripts/test-status-logic.sh` 覆盖。

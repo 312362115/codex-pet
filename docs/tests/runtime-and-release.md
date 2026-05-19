@@ -22,16 +22,14 @@ PASS status logic
 - 状态到动画的映射。
 - 各动画帧数。
 - 动作总时长和按帧数自适应的单帧间隔。
-- 静止、表情、微动作、小动作、中/大动作、交互和调试动作策略。
+- 静止、微动作、小动作、中/大动作、交互和调试动作策略；独立表情动作不进入默认调度。
 - 动作 catalog 的层级分类。
 - 统一 timeline 的冲突决策：小动作排队、可见动作打断微动作、大动作丢弃、hover 打断、drag 抑制、过期状态动作丢弃。
 
 关键帧数预期：
 
-- `blink`：5 帧。
-- `slow-blink`：8 帧。
-- `eye-shift-left/right`：8 帧。
-- 表情过渡动作：12 帧。
+- 旧表情 clip：`blink` 5 帧，`slow-blink` 和 `eye-shift-left/right` 8 帧；这些资产保留但不默认独立调度。
+- 旧表情过渡动作：12 帧。
 - 微动作：`breathing`、`hair-sway` 为 12 帧；`weight-shift`、`shoulder-relax`、`tiny-hand-adjust` 为 16 帧。
 - `running`：24 帧。
 - `waving`：24 帧。
@@ -58,10 +56,8 @@ PASS status logic
 
 对应时长预期：
 
-- `blink`：`0.25s`。
-- `slow-blink`：`0.7s`。
-- `eye-shift-left/right`：`0.8s`。
-- 表情过渡：`1.0s`。
+- 旧表情 clip：`blink` 为 `0.25s`，`slow-blink` 为 `0.7s`，`eye-shift-left/right` 为 `0.8s`。
+- 旧表情过渡：`1.0s`。
 - 微动作：`1.2-1.6s`。
 - 短动作：`2.4s`。
 - 短瞥动作：`1.6s`。
