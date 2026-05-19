@@ -9,6 +9,18 @@ CACHE_DIR="$ROOT/.clang-cache"
 
 mkdir -p "$BIN_DIR" "$APP_DIR/Contents/Resources" "$CACHE_DIR"
 
+copy_resource_dir() {
+  local source_dir="$1"
+  local target_dir="$2"
+  mkdir -p "$target_dir"
+  rsync -a \
+    --delete \
+    --delete-excluded \
+    --exclude '.DS_Store' \
+    --exclude '._*' \
+    "$source_dir"/ "$target_dir"/
+}
+
 swiftc \
   -module-cache-path "$CACHE_DIR" \
   -Xcc -fmodules-cache-path="$CACHE_DIR" \
@@ -27,8 +39,8 @@ swiftc \
 /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$APP_DIR/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :NSHighResolutionCapable bool true" "$APP_DIR/Contents/Info.plist"
 
-ditto "$ROOT/assets/lingxi-ol-hires" "$APP_DIR/Contents/Resources/lingxi-ol-hires"
-ditto "$ROOT/assets/lingxi-ol" "$APP_DIR/Contents/Resources/lingxi-ol"
+copy_resource_dir "$ROOT/assets/lingxi-ol-hires" "$APP_DIR/Contents/Resources/lingxi-ol-hires"
+copy_resource_dir "$ROOT/assets/lingxi-ol" "$APP_DIR/Contents/Resources/lingxi-ol"
 
 chmod +x "$BIN_DIR/CodexPetCompanion"
 echo "$APP_DIR"
