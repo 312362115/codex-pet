@@ -127,7 +127,41 @@ private final class PetFrameProvider {
             (.waving, "waving"),
             (.jumping, "jumping"),
             (.review, "review"),
-            (.turning, "turning")
+            (.turning, "turning"),
+            (.glanceLeft, "glance-left"),
+            (.glanceRight, "glance-right"),
+            (.blink, "blink"),
+            (.slowBlink, "slow-blink"),
+            (.eyeShiftLeft, "eye-shift-left"),
+            (.eyeShiftRight, "eye-shift-right"),
+            (.focusTighten, "focus-tighten"),
+            (.relaxFace, "relax-face"),
+            (.smallSmile, "small-smile"),
+            (.tiredSoften, "tired-soften"),
+            (.curiousLook, "curious-look"),
+            (.breathing, "breathing"),
+            (.hairSway, "hair-sway"),
+            (.weightShift, "weight-shift"),
+            (.shoulderRelax, "shoulder-relax"),
+            (.tinyHandAdjust, "tiny-hand-adjust"),
+            (.thinking, "thinking"),
+            (.adjustGlasses, "adjust-glasses"),
+            (.nod, "nod"),
+            (.tapKeyboard, "tap-keyboard"),
+            (.checkNotes, "check-notes"),
+            (.stretchWrist, "stretch-wrist"),
+            (.cursorLook, "cursor-look"),
+            (.hoverSmile, "hover-smile"),
+            (.contextMenuAttend, "context-menu-attend"),
+            (.focusShift, "focus-shift"),
+            (.fixPosture, "fix-posture"),
+            (.adjustOutfit, "adjust-outfit"),
+            (.lookAround, "look-around"),
+            (.stretch, "stretch"),
+            (.stepAside, "step-aside"),
+            (.postureReset, "posture-reset"),
+            (.dragReleaseSettle, "drag-release-settle"),
+            (.wakeUp, "wake-up")
         ]
 
         var loaded: [PetAnimation: [CGImage]] = [:]
@@ -170,6 +204,18 @@ private final class PetFrameProvider {
         case .review:
             return .review
         case .turning:
+            return .runningRight
+        case .glanceLeft:
+            return .runningLeft
+        case .glanceRight:
+            return .runningRight
+        case .blink, .slowBlink, .eyeShiftLeft, .eyeShiftRight, .focusTighten, .relaxFace, .smallSmile, .tiredSoften,
+             .curiousLook, .breathing, .hairSway, .weightShift, .shoulderRelax, .tinyHandAdjust, .nod, .hoverSmile,
+             .contextMenuAttend, .fixPosture, .adjustOutfit, .dragReleaseSettle, .wakeUp, .stretch, .postureReset:
+            return .waiting
+        case .thinking, .adjustGlasses, .tapKeyboard, .checkNotes, .stretchWrist, .cursorLook, .focusShift:
+            return .running
+        case .lookAround, .stepAside:
             return .runningRight
         }
     }
@@ -225,6 +271,7 @@ private final class PetView: NSView {
     var onDragEnd: (() -> Void)?
     var onMouseEnter: (() -> Void)?
     var onMouseExit: (() -> Void)?
+    var onContextMenuOpen: (() -> Void)?
     private var trackingArea: NSTrackingArea?
 
     init(frameProvider: PetFrameProvider, config: CompanionConfig) {
@@ -254,6 +301,10 @@ private final class PetView: NSView {
         self.animation = animation
         self.frameIndex = 0
         needsDisplay = true
+    }
+
+    func frameCount(for animation: PetAnimation) -> Int {
+        frameProvider.frameCount(for: animation)
     }
 
     func advanceAnimationFrame() -> Bool {
@@ -380,6 +431,7 @@ private final class PetView: NSView {
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
+        onContextMenuOpen?()
         let menu = NSMenu()
         let openItem = NSMenuItem(title: "打开 Codex", action: #selector(AppDelegate.openCodex), keyEquivalent: "")
         openItem.target = NSApp.delegate
@@ -392,9 +444,12 @@ private final class PetView: NSView {
     }
 }
 
-private enum AmbientActionSize {
+private enum PetSchedulerKind {
+    case expression
+    case micro
     case small
     case large
+    case interaction
 }
 
 private final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -403,22 +458,35 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var petView: PetView?
     private var activityReader: CodexActivityReader?
     private var pollTimer: Timer?
-    private var ambientTimer: Timer?
+    private var expressionTimer: Timer?
+    private var microActionTimer: Timer?
+    private var smallActionTimer: Timer?
     private var largeActionTimer: Timer?
     private var animationTimer: Timer?
     private var currentStatus = CodexActivityStatus.waiting
     private var isDragging = false
-    private var isPlayingAmbientAction = false
     private var isHovering = false
-    private var ambientSuite: [PetAnimation] = []
-    private var ambientSuiteStep = 0
-    private var activeActionSize: AmbientActionSize?
+    private var actionSuite: [PetAnimation] = []
+    private var actionSuiteStep = 0
+    private var activeSchedulerKind: PetSchedulerKind?
+    private var activeActionLayer: PetActionLayer?
+    private var activeActionPriority: PetActionPriority?
+    private var activeActionReservedUntil: Date?
+    private var lastStatusChangeAt = Date()
+    private var lastInteractionAt = Date.distantPast
+    private var queuedSmallAction: [PetAnimation]?
     private var workingSuiteCursor = 0
     private var waitingSuiteCursor = 0
     private var offlineSuiteCursor = 0
+    private var workingMicroSuiteCursor = 0
+    private var waitingMicroSuiteCursor = 0
     private var workingLargeSuiteCursor = 0
     private var waitingLargeSuiteCursor = 0
+    private var expressionCursor = 0
     private let ambientPolicy = PetAmbientActionPolicy()
+    private let actionCatalog = PetActionCatalog()
+    private let actionTimeline = PetActionTimeline()
+    private let timingPolicy = PetAnimationTimingPolicy()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -439,6 +507,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             petView.onMouseExit = { [weak self] in
                 self?.endHovering()
+            }
+            petView.onContextMenuOpen = { [weak self] in
+                self?.beginContextMenuAttention()
             }
 
             let frame = initialWindowFrame()
@@ -462,7 +533,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             pollStatus()
-            scheduleAmbientActions(initialDelay: true)
+            scheduleAllSchedulers(initialDelay: true)
         } catch {
             presentStartupError(error)
         }
@@ -490,78 +561,158 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        let previousStatus = currentStatus
         currentStatus = status
-        stopAmbientAnimation()
+        lastStatusChangeAt = Date()
+        stopScheduledAndActiveActions()
         if !isDragging {
             petView?.settle(status: status)
-            scheduleAmbientActions(initialDelay: true)
+            let transition = statusTransitionSuite(from: previousStatus, to: status)
+            if transition.isEmpty {
+                scheduleAllSchedulers(initialDelay: true)
+            } else {
+                requestActionSuite(transition, kind: .interaction, sourceStatus: status)
+            }
         }
     }
 
-    private func scheduleAmbientActions(initialDelay: Bool = false) {
-        scheduleSmallAmbientAction(initialDelay: initialDelay)
-        scheduleLargeAmbientAction(initialDelay: initialDelay)
+    private func scheduleAllSchedulers(initialDelay: Bool = false) {
+        scheduleExpressionAction(initialDelay: initialDelay)
+        scheduleMicroAction(initialDelay: initialDelay)
+        scheduleSmallAction(initialDelay: initialDelay)
+        scheduleLargeAction(initialDelay: initialDelay)
     }
 
-    private func scheduleSmallAmbientAction(initialDelay: Bool = false) {
-        ambientTimer?.invalidate()
+    private func scheduleExpressionAction(initialDelay: Bool = false) {
+        expressionTimer?.invalidate()
         guard !isDragging else {
             return
         }
 
-        let interval = initialDelay ? TimeInterval.random(in: 2.0...4.0) : TimeInterval.random(in: 4.0...8.0)
-        ambientTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
-            self?.playAmbientAction(size: .small)
+        let interval = expressionInterval(initialDelay: initialDelay)
+        expressionTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            self?.requestNextAction(kind: .expression)
         }
     }
 
-    private func scheduleLargeAmbientAction(initialDelay: Bool = false) {
+    private func scheduleMicroAction(initialDelay: Bool = false) {
+        microActionTimer?.invalidate()
+        guard !isDragging else {
+            return
+        }
+
+        let interval = microActionInterval(initialDelay: initialDelay)
+        microActionTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            self?.requestNextAction(kind: .micro)
+        }
+    }
+
+    private func scheduleSmallAction(initialDelay: Bool = false) {
+        smallActionTimer?.invalidate()
+        guard !isDragging else {
+            return
+        }
+
+        let interval = smallActionInterval(initialDelay: initialDelay)
+        smallActionTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            self?.requestNextAction(kind: .small)
+        }
+    }
+
+    private func scheduleLargeAction(initialDelay: Bool = false) {
         largeActionTimer?.invalidate()
         guard !isDragging, !isHovering else {
             return
         }
 
-        let interval = initialDelay ? TimeInterval.random(in: 35.0...55.0) : TimeInterval.random(in: 55.0...95.0)
+        let interval = largeActionInterval(initialDelay: initialDelay)
         largeActionTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
-            self?.playAmbientAction(size: .large)
+            self?.requestNextAction(kind: .large)
         }
     }
 
-    private func playAmbientAction(size: AmbientActionSize) {
-        guard !isDragging, !isPlayingAmbientAction, petView != nil else {
-            scheduleAmbientAction(size: size)
+    private func requestNextAction(kind: PetSchedulerKind) {
+        guard !isDragging, petView != nil else {
+            scheduleAction(kind: kind)
             return
         }
 
-        let suite = isHovering ? hoverSuite() : nextAmbientSuite(size: size)
+        let suite = nextSuite(kind: kind)
         guard !suite.isEmpty else {
-            scheduleAmbientAction(size: size)
+            scheduleAction(kind: kind)
             return
         }
 
-        isPlayingAmbientAction = true
-        activeActionSize = size
-        ambientSuite = suite
-        ambientSuiteStep = 0
-        playNextAmbientSuiteStep()
+        requestActionSuite(suite, kind: kind, sourceStatus: currentStatus)
     }
 
-    private func playNextAmbientSuiteStep() {
+    private func requestActionSuite(_ suite: [PetAnimation], kind: PetSchedulerKind, sourceStatus: CodexActivityStatus) {
+        guard !suite.isEmpty else {
+            scheduleAction(kind: kind)
+            return
+        }
+        if (kind == .expression || kind == .micro),
+           activeActionLayer != nil,
+           activeActionLayer != actionLayer(for: kind) {
+            scheduleAction(kind: kind)
+            return
+        }
+
+        let primaryAnimation = primaryAnimation(in: suite) ?? suite[0]
+        let request = PetActionRequest(animation: primaryAnimation, sourceStatus: sourceStatus, submittedAt: Date(), catalog: actionCatalog)
+        let state = PetActionTimelineState(
+            currentStatus: currentStatus,
+            currentLayer: activeActionLayer,
+            currentPriority: activeActionPriority,
+            reservedUntil: activeActionReservedUntil,
+            isDragging: isDragging,
+            isHovering: isHovering,
+            lastStatusChangeAt: lastStatusChangeAt,
+            lastInteractionAt: lastInteractionAt
+        )
+        let decision = actionTimeline.decide(request: request, state: state)
+
+        switch decision.outcome {
+        case .playNow, .merge:
+            playActionSuite(suite, kind: kind, request: request)
+        case .queue:
+            if kind == .small {
+                queuedSmallAction = suite
+            } else {
+                scheduleAction(kind: kind)
+            }
+        case .drop:
+            scheduleAction(kind: kind)
+        }
+    }
+
+    private func playActionSuite(_ suite: [PetAnimation], kind: PetSchedulerKind, request: PetActionRequest) {
+        activeSchedulerKind = kind
+        activeActionLayer = request.layer
+        activeActionPriority = request.priority
+        activeActionReservedUntil = Date().addingTimeInterval(totalDuration(for: suite))
+        actionSuite = suite
+        actionSuiteStep = 0
+        playNextActionSuiteStep()
+    }
+
+    private func playNextActionSuiteStep() {
         guard !isDragging, let petView else {
-            finishAmbientAction()
+            finishAction()
             return
         }
 
-        guard ambientSuiteStep < ambientSuite.count else {
-            finishAmbientAction()
+        guard actionSuiteStep < actionSuite.count else {
+            finishAction()
             return
         }
 
-        let animation = ambientSuite[ambientSuiteStep]
-        ambientSuiteStep += 1
+        let animation = actionSuite[actionSuiteStep]
+        actionSuiteStep += 1
         petView.play(animation: animation)
         animationTimer?.invalidate()
-        animationTimer = Timer.scheduledTimer(withTimeInterval: frameInterval(for: animation), repeats: true) { [weak self] timer in
+        let frameInterval = timingPolicy.frameInterval(for: animation, frameCount: petView.frameCount(for: animation))
+        animationTimer = Timer.scheduledTimer(withTimeInterval: frameInterval, repeats: true) { [weak self] timer in
             guard let self, let petView = self.petView else {
                 timer.invalidate()
                 return
@@ -569,47 +720,71 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
             if petView.advanceAnimationFrame() {
                 timer.invalidate()
-                self.playNextAmbientSuiteStep()
+                self.playNextActionSuiteStep()
             }
         }
     }
 
-    private func finishAmbientAction() {
+    private func finishAction() {
         animationTimer?.invalidate()
         animationTimer = nil
-        ambientSuite = []
-        ambientSuiteStep = 0
-        isPlayingAmbientAction = false
-        let finishedActionSize = activeActionSize
-        activeActionSize = nil
+        actionSuite = []
+        actionSuiteStep = 0
+        let finishedKind = activeSchedulerKind
+        activeSchedulerKind = nil
+        activeActionLayer = nil
+        activeActionPriority = nil
+        activeActionReservedUntil = nil
         petView?.settle(status: currentStatus)
-        switch finishedActionSize {
+
+        if let queuedSmallAction, !isDragging, !isHovering {
+            self.queuedSmallAction = nil
+            requestActionSuite(queuedSmallAction, kind: .small, sourceStatus: currentStatus)
+            return
+        }
+
+        switch finishedKind {
+        case .expression:
+            scheduleExpressionAction()
+        case .micro:
+            scheduleMicroAction()
         case .small:
-            scheduleSmallAmbientAction()
+            scheduleSmallAction()
         case .large:
-            scheduleLargeAmbientAction()
+            scheduleLargeAction()
+        case .interaction:
+            scheduleAllSchedulers(initialDelay: true)
         case nil:
-            scheduleAmbientActions()
+            scheduleAllSchedulers(initialDelay: true)
         }
     }
 
-    private func nextAmbientSuite(size: AmbientActionSize) -> [PetAnimation] {
-        let suites: [[PetAnimation]]
-        switch size {
+    private func nextSuite(kind: PetSchedulerKind) -> [PetAnimation] {
+        switch kind {
+        case .expression:
+            let animations = actionCatalog.animations(for: currentStatus, layer: .expression)
+            guard !animations.isEmpty else {
+                return []
+            }
+            defer { expressionCursor += 1 }
+            return [animations[expressionCursor % animations.count]]
+        case .micro:
+            return nextActionSuite(from: ambientPolicy.microActionSuites(for: currentStatus), kind: kind)
         case .small:
-            suites = ambientPolicy.smallActionSuites(for: currentStatus)
+            return nextActionSuite(from: ambientPolicy.smallActionSuites(for: currentStatus), kind: kind)
         case .large:
-            suites = ambientPolicy.largeActionSuites(for: currentStatus)
+            return nextActionSuite(from: ambientPolicy.largeActionSuites(for: currentStatus), kind: kind)
+        case .interaction:
+            return hoverSuite()
         }
+    }
+
+    private func nextActionSuite(from suites: [[PetAnimation]], kind: PetSchedulerKind) -> [PetAnimation] {
         guard !suites.isEmpty else {
             return []
         }
 
-        return nextSuite(from: suites, size: size)
-    }
-
-    private func nextSuite(from suites: [[PetAnimation]], size: AmbientActionSize) -> [PetAnimation] {
-        switch (currentStatus, size) {
+        switch (currentStatus, kind) {
         case (.working, .small):
             defer { workingSuiteCursor += 1 }
             return suites[workingSuiteCursor % suites.count]
@@ -619,37 +794,56 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         case (.offline, .small):
             defer { offlineSuiteCursor += 1 }
             return suites[offlineSuiteCursor % suites.count]
+        case (.working, .micro):
+            defer { workingMicroSuiteCursor += 1 }
+            return suites[workingMicroSuiteCursor % suites.count]
+        case (.waiting, .micro):
+            defer { waitingMicroSuiteCursor += 1 }
+            return suites[waitingMicroSuiteCursor % suites.count]
         case (.working, .large):
             defer { workingLargeSuiteCursor += 1 }
             return suites[workingLargeSuiteCursor % suites.count]
         case (.waiting, .large):
             defer { waitingLargeSuiteCursor += 1 }
             return suites[waitingLargeSuiteCursor % suites.count]
-        case (.offline, .large):
+        case (.offline, .large), (.offline, .micro), (_, .expression), (_, .interaction):
             return suites[0]
         }
     }
 
-    private func scheduleAmbientAction(size: AmbientActionSize) {
-        switch size {
+    private func scheduleAction(kind: PetSchedulerKind) {
+        switch kind {
+        case .expression:
+            scheduleExpressionAction()
+        case .micro:
+            scheduleMicroAction()
         case .small:
-            scheduleSmallAmbientAction()
+            scheduleSmallAction()
         case .large:
-            scheduleLargeAmbientAction()
+            scheduleLargeAction()
+        case .interaction:
+            break
         }
     }
 
-    private func stopAmbientAnimation() {
-        ambientTimer?.invalidate()
-        ambientTimer = nil
+    private func stopScheduledAndActiveActions() {
+        expressionTimer?.invalidate()
+        expressionTimer = nil
+        microActionTimer?.invalidate()
+        microActionTimer = nil
+        smallActionTimer?.invalidate()
+        smallActionTimer = nil
         largeActionTimer?.invalidate()
         largeActionTimer = nil
         animationTimer?.invalidate()
         animationTimer = nil
-        ambientSuite = []
-        ambientSuiteStep = 0
-        activeActionSize = nil
-        isPlayingAmbientAction = false
+        actionSuite = []
+        actionSuiteStep = 0
+        activeSchedulerKind = nil
+        activeActionLayer = nil
+        activeActionPriority = nil
+        activeActionReservedUntil = nil
+        queuedSmallAction = nil
     }
 
     private func beginHovering() {
@@ -658,49 +852,157 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         isHovering = true
-        stopAmbientAnimation()
-        playAmbientAction(size: .large)
+        lastInteractionAt = Date()
+        stopScheduledAndActiveActions()
+        requestActionSuite(hoverSuite(), kind: .interaction, sourceStatus: currentStatus)
     }
 
     private func endHovering() {
         isHovering = false
+        lastInteractionAt = Date()
         guard !isDragging else {
             return
         }
-        stopAmbientAnimation()
+        stopScheduledAndActiveActions()
         petView?.settle(status: currentStatus)
-        scheduleAmbientActions(initialDelay: true)
+        scheduleAllSchedulers(initialDelay: true)
     }
 
     private func hoverSuite() -> [PetAnimation] {
         switch currentStatus {
         case .working:
-            return [.review, .turning, .review]
+            return [.curiousLook, .cursorLook, .hoverSmile]
         case .waiting:
-            return [.waiting, .turning, .waiting]
+            return [.curiousLook, .cursorLook, .hoverSmile]
         case .offline:
             return [.failed]
         }
     }
 
-    private func frameInterval(for animation: PetAnimation) -> TimeInterval {
-        switch animation {
-        case .turning:
-            return 0.36
-        default:
-            return 0.24
+    private func beginContextMenuAttention() {
+        guard !isDragging else {
+            return
         }
+
+        lastInteractionAt = Date()
+        stopScheduledAndActiveActions()
+        requestActionSuite([.contextMenuAttend], kind: .interaction, sourceStatus: currentStatus)
     }
 
     private func beginDragging() {
         isDragging = true
-        stopAmbientAnimation()
+        lastInteractionAt = Date()
+        stopScheduledAndActiveActions()
     }
 
     private func endDragging() {
         isDragging = false
-        petView?.settle(status: currentStatus)
-        scheduleAmbientActions(initialDelay: true)
+        lastInteractionAt = Date()
+        requestActionSuite([.dragReleaseSettle], kind: .interaction, sourceStatus: currentStatus)
+    }
+
+    private func statusTransitionSuite(from previousStatus: CodexActivityStatus, to status: CodexActivityStatus) -> [PetAnimation] {
+        switch (previousStatus, status) {
+        case (_, .offline):
+            return []
+        case (.offline, .waiting):
+            return [.wakeUp]
+        case (.working, .waiting):
+            return [.relaxFace]
+        case (.offline, .working):
+            return [.wakeUp, .focusTighten]
+        case (_, .working):
+            return [.focusTighten]
+        case (_, .waiting):
+            return [.wakeUp]
+        }
+    }
+
+    private func primaryAnimation(in suite: [PetAnimation]) -> PetAnimation? {
+        suite.first { animation in
+            actionCatalog.descriptor(for: animation)?.layer != .pose
+        }
+    }
+
+    private func totalDuration(for suite: [PetAnimation]) -> TimeInterval {
+        suite.reduce(0) { partial, animation in
+            partial + timingPolicy.totalDuration(for: animation)
+        }
+    }
+
+    private func actionLayer(for kind: PetSchedulerKind) -> PetActionLayer? {
+        switch kind {
+        case .expression:
+            return .expression
+        case .micro:
+            return .micro
+        case .small:
+            return .small
+        case .large:
+            return .large
+        case .interaction:
+            return .interaction
+        }
+    }
+
+    private func expressionInterval(initialDelay: Bool) -> TimeInterval {
+        if initialDelay {
+            return TimeInterval.random(in: 2.5...5.0)
+        }
+
+        switch currentStatus {
+        case .offline:
+            return TimeInterval.random(in: 45.0...90.0)
+        case .working:
+            return TimeInterval.random(in: 4.0...9.0)
+        case .waiting:
+            return TimeInterval.random(in: 3.0...8.0)
+        }
+    }
+
+    private func smallActionInterval(initialDelay: Bool) -> TimeInterval {
+        if initialDelay {
+            return TimeInterval.random(in: 10.0...18.0)
+        }
+
+        switch currentStatus {
+        case .offline:
+            return TimeInterval.random(in: 60.0...120.0)
+        case .working:
+            return TimeInterval.random(in: 12.0...30.0)
+        case .waiting:
+            return TimeInterval.random(in: 10.0...25.0)
+        }
+    }
+
+    private func microActionInterval(initialDelay: Bool) -> TimeInterval {
+        if initialDelay {
+            return TimeInterval.random(in: 4.0...8.0)
+        }
+
+        switch currentStatus {
+        case .offline:
+            return TimeInterval.random(in: 60.0...120.0)
+        case .working:
+            return TimeInterval.random(in: 6.0...14.0)
+        case .waiting:
+            return TimeInterval.random(in: 7.0...16.0)
+        }
+    }
+
+    private func largeActionInterval(initialDelay: Bool) -> TimeInterval {
+        if initialDelay {
+            return TimeInterval.random(in: 70.0...120.0)
+        }
+
+        switch currentStatus {
+        case .offline:
+            return TimeInterval.random(in: 120.0...240.0)
+        case .working:
+            return TimeInterval.random(in: 120.0...210.0)
+        case .waiting:
+            return TimeInterval.random(in: 90.0...180.0)
+        }
     }
 
     private func initialWindowFrame() -> NSRect {

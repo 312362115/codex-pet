@@ -17,6 +17,7 @@
 - 使用 `assets/lingxi-ol-hires/` 中的高清透明 PNG 帧。
 - 根据 Codex 本地状态显示 `Codex 工作中`、`等待输入`、`Codex 离线`。
 - 平时静止，小动作约 4-8 秒一次，转身等大动作约 55-95 秒一次；鼠标悬停会立即触发同源转身动作。
+- 运行帧包含离线生成的透明通道感知补间，短动作 24 帧、转身 25 帧，播放时长保持稳定。
 - 拖动时暂停动画，使用 AppKit 原生窗口拖动。
 - 右键菜单支持打开 Codex 和退出宠物。
 
@@ -82,7 +83,7 @@ open build/CodexPetCompanion.app
 
 ## 资源说明
 
-当前运行版主用 `assets/lingxi-ol-hires/`，README 顶部展示的主图来自 `assets/reference/generated/base-shirt-skirt-hires.png`。静止、工作、等待等主态由这张高清主图生成，短动作来自 `assets/reference/generated/action-strip-shirt-skirt-consistent.png`，转身来自 `assets/reference/generated/turntable-strip-shirt-skirt-consistent.png`。裁切时禁止放大，也不再对整个人物做缩放动画；运行帧限制最大人物高度并在 App 内按比例绘制，避免从小图切大图导致模糊和身体比例变形。
+当前运行版主用 `assets/lingxi-ol-hires/`，README 顶部展示的主图来自 `assets/reference/generated/base-shirt-skirt-hires.png`。静止、工作、等待等主态由这张高清主图生成，短动作来自 `assets/reference/generated/action-strip-shirt-skirt-consistent.png`，转身来自 `assets/reference/generated/turntable-strip-shirt-skirt-consistent.png`。裁切时禁止放大，也不再对整个人物做缩放动画；运行帧限制最大人物高度并在 App 内按比例绘制，避免从小图切大图导致模糊和身体比例变形。短动作和转身动作会在生成阶段插入 premultiplied-alpha 补间帧，运行时只播放 PNG 序列，不引入模型依赖。
 
 ## 注意
 

@@ -9,6 +9,11 @@
 ## 架构说明
 
 - [运行时与素材架构](architecture/runtime-and-assets.md)：AppKit 悬浮窗、Codex 状态读取、动画策略、高清帧加载、素材生成和发布包结构。
+- [动作体系设计与实现](architecture/action-system-design.md)：梳理表情、姿态、微动作、主动作、动作组合、场景语义、调度规则、插帧算法、动作 clip 资产和当前落地状态。
+
+## 开发计划
+
+- [动作体系实现计划](plans/action-system-implementation.md)：跟踪完整动作体系的阶段、验收标准、实现约束和会话进度。
 
 ## 决策记录
 
