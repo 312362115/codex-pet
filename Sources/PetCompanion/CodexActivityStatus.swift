@@ -14,6 +14,7 @@ public enum PetAnimation: String, Equatable {
     case waving
     case jumping
     case review
+    case turning
 }
 
 public struct CodexActivitySnapshot: Equatable {
@@ -97,6 +98,8 @@ public struct PetAnimationFramePolicy {
             return 8
         case .review:
             return 10
+        case .turning:
+            return 9
         }
     }
 }
@@ -124,23 +127,37 @@ public struct PetAmbientActionPolicy {
     }
 
     public func ambientAnimations(for status: CodexActivityStatus) -> [PetAnimation] {
-        ambientSuites(for: status).flatMap { $0 }
+        smallActionSuites(for: status).flatMap { $0 }
     }
 
     public func ambientSuites(for status: CodexActivityStatus) -> [[PetAnimation]] {
+        smallActionSuites(for: status)
+    }
+
+    public func smallActionSuites(for status: CodexActivityStatus) -> [[PetAnimation]] {
         switch status {
         case .offline:
-            return [[.failed]]
+            return []
         case .working:
             return [
-                [.review, .running, .review],
-                [.review]
+                [.running],
+                [.waving],
+                [.running]
             ]
         case .waiting:
             return [
-                [.waiting, .idle, .waiting],
-                [.waiting]
+                [.waving],
+                [.running]
             ]
+        }
+    }
+
+    public func largeActionSuites(for status: CodexActivityStatus) -> [[PetAnimation]] {
+        switch status {
+        case .offline:
+            return []
+        case .working, .waiting:
+            return [[.turning]]
         }
     }
 }

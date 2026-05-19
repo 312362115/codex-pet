@@ -1,7 +1,29 @@
+# SwiftPM / compiler caches
 .build/
 .swiftpm/
+.swiftpm-cache/
 .clang-cache/
+
+# Local app build and release artifacts
 build/
+dist/
+*.dSYM/
+*.xcarchive/
+
+# Xcode user state
 *.xcuserdata/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+DerivedData/
+
+# macOS metadata
+.DS_Store
 *.DS_Store
+._*
+__MACOSX/
+.AppleDouble/
+.LSOverride
+
+# Logs
 *.log

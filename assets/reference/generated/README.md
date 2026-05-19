@@ -3,6 +3,9 @@
 这些图片是后续 3D 多视角桌宠资产的参考稿，不是当前运行版直接加载的帧。
 
 - `base-shirt-skirt-hires.png`：当前运行帧的高清主姿态源图，用于缩小裁切，避免小格放大导致毛刺。
+- `action-strip-shirt-skirt-consistent.png`：当前运行版正面小动作源图，4 个全身姿态来自同一套角色。
+- `turntable-strip-shirt-skirt-consistent.png`：当前运行版转身源图，8 个全身视角来自同一套角色。
+- `model-sheet-shirt-skirt-consistent.png`：一致角色 12 姿态参考图，只作参考，不直接切最终帧。
 - `turntable-3d-v1.png`：第一版 3D 多视角 turntable。
 - `turntable-3d-refined.png`：腿部、鞋子和整体服装优化稿。
 - `turntable-shirt-skirt.png`：去掉外套后的衬衣 + 包臀裙版本。

@@ -1,8 +1,10 @@
-source=assets/reference/generated/turntable-shirt-skirt.png
 source=assets/reference/generated/base-shirt-skirt-hires.png
+source=assets/reference/generated/action-strip-shirt-skirt-consistent.png
+source=assets/reference/generated/turntable-strip-shirt-skirt-consistent.png
 display_size=576x624
+max_body_height=540
 max_upscale=1.0
-motion=fixed suites from high-resolution same-pose micro-motion frames
+motion=pose switches only, no body scale, no upscale
 failed 10
 idle 10
 jumping 8
@@ -10,5 +12,6 @@ review 10
 running 10
 running-left 8
 running-right 8
+turning 9
 waiting 10
 waving 10

@@ -9,28 +9,11 @@ ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_ROOT = ROOT / "assets" / "reference" / "generated"
 OUTPUT_ROOT = ROOT / "assets" / "lingxi-ol-hires"
 DISPLAY_SIZE = (576, 624)
+MAX_BODY_HEIGHT = 540
 MAX_UPSCALE = 1.0
-HIRES_SOURCE = REFERENCE_ROOT / "base-shirt-skirt-hires.png"
-
-STATE_POSE = {
-    "idle": "base",
-    "running": "base",
-    "waiting": "base",
-    "review": "base",
-    "waving": "base",
-    "jumping": "base",
-    "failed": "base",
-}
-
-STATE_MOTION = {
-    "idle": [(1.000, 0, 0), (1.006, 0, -1), (1.012, 0, -2), (1.018, 0, -3), (1.022, 0, -4), (1.018, 0, -3), (1.012, 0, -2), (1.006, 0, -1), (1.000, 0, 0), (0.998, 0, 0)],
-    "running": [(1.000, 0, 0), (1.006, -1, -1), (1.012, -1, -2), (1.018, 1, -3), (1.022, 1, -4), (1.018, 0, -3), (1.012, -1, -2), (1.006, 0, -1), (1.000, 0, 0), (0.998, 0, 0)],
-    "waiting": [(1.000, 0, 0), (1.006, 0, -1), (1.012, 0, -2), (1.018, 0, -3), (1.022, 0, -4), (1.018, 0, -3), (1.012, 0, -2), (1.006, 0, -1), (1.000, 0, 0), (0.998, 0, 0)],
-    "review": [(1.000, 0, 0), (1.006, 0, -1), (1.012, 0, -2), (1.018, 0, -3), (1.022, 0, -4), (1.018, 0, -3), (1.012, 0, -2), (1.006, 0, -1), (1.000, 0, 0), (0.998, 0, 0)],
-    "jumping": [(1.000, 0, 0), (1.006, 0, -3), (1.012, 0, -6), (1.018, 0, -9), (1.012, 0, -6), (1.006, 0, -3), (1.000, 0, 0), (0.998, 0, 0)],
-    "failed": [(1.000, 0, 0), (1.006, 0, -1), (1.012, 0, -2), (1.018, 0, -3), (1.022, 0, -4), (1.018, 0, -3), (1.012, 0, -2), (1.006, 0, -1), (1.000, 0, 0), (0.998, 0, 0)],
-}
-
+ACTION_STRIP_SOURCE = REFERENCE_ROOT / "action-strip-shirt-skirt-consistent.png"
+TURNTABLE_STRIP_SOURCE = REFERENCE_ROOT / "turntable-strip-shirt-skirt-consistent.png"
+PRIMARY_SOURCE = REFERENCE_ROOT / "base-shirt-skirt-hires.png"
 
 def is_chroma_green(pixel: tuple[int, int, int, int]) -> bool:
     red, green, blue, alpha = pixel
@@ -52,12 +35,12 @@ def transparent_chroma(image: Image.Image) -> Image.Image:
 
     mask = Image.new("L", rgba.size)
     mask.putdata(mask_values)
-    # 去掉贴近绿幕的一圈边，再做非常轻的羽化，避免绿边和锯齿同时出现。
-    mask = mask.filter(ImageFilter.MinFilter(3)).filter(ImageFilter.GaussianBlur(radius=0.75))
+    # 真人立绘的脸、脚踝和小腿很窄，不能用腐蚀型 mask，否则会削尖轮廓。
+    mask = mask.filter(ImageFilter.GaussianBlur(radius=0.35))
 
     pixels = []
     for (red, green, blue, alpha), mask_alpha in zip(rgba.getdata(), mask.getdata()):
-        if mask_alpha < 22:
+        if mask_alpha < 32:
             pixels.append((0, 0, 0, 0))
             continue
 
@@ -102,7 +85,7 @@ def trim_and_fit(frame: Image.Image) -> Image.Image:
         ))
 
     canvas_width, canvas_height = DISPLAY_SIZE
-    scale = min(canvas_width / cropped.width, canvas_height / cropped.height, MAX_UPSCALE)
+    scale = min(canvas_width / cropped.width, MAX_BODY_HEIGHT / cropped.height, MAX_UPSCALE)
     scaled = cropped.resize((
         max(1, round(cropped.width * scale)),
         max(1, round(cropped.height * scale)),
@@ -116,29 +99,19 @@ def trim_and_fit(frame: Image.Image) -> Image.Image:
     return clean_edge_residue(canvas)
 
 
-def prepare_hires_frame(path: Path) -> Image.Image:
-    return trim_and_fit(transparent_chroma(Image.open(path).convert("RGBA")))
-
-
-def transform_frame(frame: Image.Image, scale: float, dx: int, dy: int) -> Image.Image:
-    if scale == 1.0 and dx == 0 and dy == 0:
-        return frame.copy()
-
-    width, height = frame.size
-    scaled = frame.resize((
-        max(1, round(width * scale)),
-        max(1, round(height * scale)),
-    ), Image.Resampling.LANCZOS)
-
-    canvas = Image.new("RGBA", frame.size, (0, 0, 0, 0))
-    x = round((width - scaled.width) / 2) + dx
-    y = height - scaled.height + dy
-    canvas.alpha_composite(scaled, (x, y))
-    return clean_edge_residue(canvas)
-
-
-def motion_sequence(frame: Image.Image, motions: list[tuple[float, int, int]]) -> list[Image.Image]:
-    return [transform_frame(frame, scale, dx, dy) for scale, dx, dy in motions]
+def brief_action_sequence(primary_frame: Image.Image, action_frame: Image.Image) -> list[Image.Image]:
+    return [
+        primary_frame.copy(),
+        primary_frame.copy(),
+        action_frame.copy(),
+        action_frame.copy(),
+        action_frame.copy(),
+        action_frame.copy(),
+        primary_frame.copy(),
+        primary_frame.copy(),
+        primary_frame.copy(),
+        primary_frame.copy(),
+    ]
 
 
 def split_grid(path: Path, columns: int, rows: int) -> list[Image.Image]:
@@ -155,6 +128,10 @@ def split_grid(path: Path, columns: int, rows: int) -> list[Image.Image]:
     return frames
 
 
+def load_single_frame(path: Path) -> Image.Image:
+    return trim_and_fit(transparent_chroma(Image.open(path).convert("RGBA")))
+
+
 def write_state(state: str, frames: list[Image.Image]) -> None:
     state_dir = OUTPUT_ROOT / state
     state_dir.mkdir(parents=True, exist_ok=True)
@@ -165,24 +142,31 @@ def write_state(state: str, frames: list[Image.Image]) -> None:
 
 
 def main() -> None:
-    base_frame = prepare_hires_frame(HIRES_SOURCE)
-    turn_frames = split_grid(REFERENCE_ROOT / "turntable-shirt-skirt.png", columns=8, rows=1)
+    primary_frame = load_single_frame(PRIMARY_SOURCE)
+    action_frames = split_grid(ACTION_STRIP_SOURCE, columns=4, rows=1)
+    turn_frames = split_grid(TURNTABLE_STRIP_SOURCE, columns=8, rows=1)
 
-    for state in STATE_POSE:
-        write_state(state, motion_sequence(base_frame, STATE_MOTION[state if state != "waving" else "idle"]))
+    for state in ["idle", "waiting", "review", "jumping", "failed"]:
+        write_state(state, [primary_frame.copy() for _ in range(10 if state != "jumping" else 8)])
+
+    write_state("running", brief_action_sequence(primary_frame, action_frames[2]))
+    write_state("waving", brief_action_sequence(primary_frame, action_frames[3]))
 
     write_state("running-right", turn_frames)
     write_state("running-left", list(reversed(turn_frames)))
+    write_state("turning", [*turn_frames, turn_frames[0]])
 
     manifest = OUTPUT_ROOT / "manifest.txt"
     manifest.write_text(
         "\n".join(
             [
-                "source=assets/reference/generated/turntable-shirt-skirt.png",
                 "source=assets/reference/generated/base-shirt-skirt-hires.png",
+                "source=assets/reference/generated/action-strip-shirt-skirt-consistent.png",
+                "source=assets/reference/generated/turntable-strip-shirt-skirt-consistent.png",
                 "display_size=576x624",
+                f"max_body_height={MAX_BODY_HEIGHT}",
                 f"max_upscale={MAX_UPSCALE}",
-                "motion=fixed suites from high-resolution same-pose micro-motion frames",
+                "motion=pose switches only, no body scale, no upscale",
                 *[
                     f"{state} {len(list((OUTPUT_ROOT / state).glob('*.png')))}"
                     for state in sorted(path.name for path in OUTPUT_ROOT.iterdir() if path.is_dir())

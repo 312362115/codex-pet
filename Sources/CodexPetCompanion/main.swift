@@ -126,7 +126,8 @@ private final class PetFrameProvider {
             (.failed, "failed"),
             (.waving, "waving"),
             (.jumping, "jumping"),
-            (.review, "review")
+            (.review, "review"),
+            (.turning, "turning")
         ]
 
         var loaded: [PetAnimation: [CGImage]] = [:]
@@ -168,6 +169,8 @@ private final class PetFrameProvider {
             return .jumping
         case .review:
             return .review
+        case .turning:
+            return .runningRight
         }
     }
 }
@@ -304,18 +307,32 @@ private final class PetView: NSView {
 
         if let frame = frameProvider.frame(animation: animation, index: frameIndex) {
             context.interpolationQuality = .high
-            context.draw(
-                frame,
-                in: CGRect(
-                    x: 0,
-                    y: 48,
-                    width: config.displayWidth,
-                    height: config.displayHeight
-                )
+            let imageBounds = CGRect(
+                x: 0,
+                y: 48,
+                width: bounds.width,
+                height: max(0, bounds.height - 48)
             )
+            context.draw(frame, in: aspectFitRect(for: frame, in: imageBounds))
         }
 
         drawStatusPill()
+    }
+
+    private func aspectFitRect(for frame: CGImage, in bounds: CGRect) -> CGRect {
+        guard frame.width > 0, frame.height > 0, bounds.width > 0, bounds.height > 0 else {
+            return bounds
+        }
+
+        let scale = min(bounds.width / CGFloat(frame.width), bounds.height / CGFloat(frame.height))
+        let width = CGFloat(frame.width) * scale
+        let height = CGFloat(frame.height) * scale
+        return CGRect(
+            x: bounds.midX - width / 2,
+            y: bounds.midY - height / 2,
+            width: width,
+            height: height
+        )
     }
 
     private func drawStatusPill() {
@@ -375,6 +392,11 @@ private final class PetView: NSView {
     }
 }
 
+private enum AmbientActionSize {
+    case small
+    case large
+}
+
 private final class AppDelegate: NSObject, NSApplicationDelegate {
     private let config = CompanionConfig.standard
     private var window: PetWindow?
@@ -382,6 +404,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var activityReader: CodexActivityReader?
     private var pollTimer: Timer?
     private var ambientTimer: Timer?
+    private var largeActionTimer: Timer?
     private var animationTimer: Timer?
     private var currentStatus = CodexActivityStatus.waiting
     private var isDragging = false
@@ -389,9 +412,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isHovering = false
     private var ambientSuite: [PetAnimation] = []
     private var ambientSuiteStep = 0
+    private var activeActionSize: AmbientActionSize?
     private var workingSuiteCursor = 0
     private var waitingSuiteCursor = 0
     private var offlineSuiteCursor = 0
+    private var workingLargeSuiteCursor = 0
+    private var waitingLargeSuiteCursor = 0
     private let ambientPolicy = PetAmbientActionPolicy()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -436,7 +462,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             pollStatus()
-            scheduleAmbientAction()
+            scheduleAmbientActions(initialDelay: true)
         } catch {
             presentStartupError(error)
         }
@@ -468,35 +494,53 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         stopAmbientAnimation()
         if !isDragging {
             petView?.settle(status: status)
-            scheduleAmbientAction()
+            scheduleAmbientActions(initialDelay: true)
         }
     }
 
-    private func scheduleAmbientAction() {
+    private func scheduleAmbientActions(initialDelay: Bool = false) {
+        scheduleSmallAmbientAction(initialDelay: initialDelay)
+        scheduleLargeAmbientAction(initialDelay: initialDelay)
+    }
+
+    private func scheduleSmallAmbientAction(initialDelay: Bool = false) {
         ambientTimer?.invalidate()
         guard !isDragging else {
             return
         }
 
-        let interval = TimeInterval.random(in: 6.0...12.0)
+        let interval = initialDelay ? TimeInterval.random(in: 2.0...4.0) : TimeInterval.random(in: 4.0...8.0)
         ambientTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
-            self?.playAmbientAction()
+            self?.playAmbientAction(size: .small)
         }
     }
 
-    private func playAmbientAction() {
-        guard !isDragging, !isPlayingAmbientAction, petView != nil else {
-            scheduleAmbientAction()
+    private func scheduleLargeAmbientAction(initialDelay: Bool = false) {
+        largeActionTimer?.invalidate()
+        guard !isDragging, !isHovering else {
             return
         }
 
-        let suite = isHovering ? hoverSuite() : nextAmbientSuite()
+        let interval = initialDelay ? TimeInterval.random(in: 35.0...55.0) : TimeInterval.random(in: 55.0...95.0)
+        largeActionTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            self?.playAmbientAction(size: .large)
+        }
+    }
+
+    private func playAmbientAction(size: AmbientActionSize) {
+        guard !isDragging, !isPlayingAmbientAction, petView != nil else {
+            scheduleAmbientAction(size: size)
+            return
+        }
+
+        let suite = isHovering ? hoverSuite() : nextAmbientSuite(size: size)
         guard !suite.isEmpty else {
-            scheduleAmbientAction()
+            scheduleAmbientAction(size: size)
             return
         }
 
         isPlayingAmbientAction = true
+        activeActionSize = size
         ambientSuite = suite
         ambientSuiteStep = 0
         playNextAmbientSuiteStep()
@@ -517,7 +561,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         ambientSuiteStep += 1
         petView.play(animation: animation)
         animationTimer?.invalidate()
-        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] timer in
+        animationTimer = Timer.scheduledTimer(withTimeInterval: frameInterval(for: animation), repeats: true) { [weak self] timer in
             guard let self, let petView = self.petView else {
                 timer.invalidate()
                 return
@@ -536,39 +580,75 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         ambientSuite = []
         ambientSuiteStep = 0
         isPlayingAmbientAction = false
+        let finishedActionSize = activeActionSize
+        activeActionSize = nil
         petView?.settle(status: currentStatus)
-        scheduleAmbientAction()
+        switch finishedActionSize {
+        case .small:
+            scheduleSmallAmbientAction()
+        case .large:
+            scheduleLargeAmbientAction()
+        case nil:
+            scheduleAmbientActions()
+        }
     }
 
-    private func nextAmbientSuite() -> [PetAnimation] {
-        let suites = ambientPolicy.ambientSuites(for: currentStatus)
+    private func nextAmbientSuite(size: AmbientActionSize) -> [PetAnimation] {
+        let suites: [[PetAnimation]]
+        switch size {
+        case .small:
+            suites = ambientPolicy.smallActionSuites(for: currentStatus)
+        case .large:
+            suites = ambientPolicy.largeActionSuites(for: currentStatus)
+        }
         guard !suites.isEmpty else {
             return []
         }
 
-        switch currentStatus {
-        case .working:
-            let suite = suites[workingSuiteCursor % suites.count]
-            workingSuiteCursor += 1
-            return suite
-        case .waiting:
-            let suite = suites[waitingSuiteCursor % suites.count]
-            waitingSuiteCursor += 1
-            return suite
-        case .offline:
-            let suite = suites[offlineSuiteCursor % suites.count]
-            offlineSuiteCursor += 1
-            return suite
+        return nextSuite(from: suites, size: size)
+    }
+
+    private func nextSuite(from suites: [[PetAnimation]], size: AmbientActionSize) -> [PetAnimation] {
+        switch (currentStatus, size) {
+        case (.working, .small):
+            defer { workingSuiteCursor += 1 }
+            return suites[workingSuiteCursor % suites.count]
+        case (.waiting, .small):
+            defer { waitingSuiteCursor += 1 }
+            return suites[waitingSuiteCursor % suites.count]
+        case (.offline, .small):
+            defer { offlineSuiteCursor += 1 }
+            return suites[offlineSuiteCursor % suites.count]
+        case (.working, .large):
+            defer { workingLargeSuiteCursor += 1 }
+            return suites[workingLargeSuiteCursor % suites.count]
+        case (.waiting, .large):
+            defer { waitingLargeSuiteCursor += 1 }
+            return suites[waitingLargeSuiteCursor % suites.count]
+        case (.offline, .large):
+            return suites[0]
+        }
+    }
+
+    private func scheduleAmbientAction(size: AmbientActionSize) {
+        switch size {
+        case .small:
+            scheduleSmallAmbientAction()
+        case .large:
+            scheduleLargeAmbientAction()
         }
     }
 
     private func stopAmbientAnimation() {
         ambientTimer?.invalidate()
         ambientTimer = nil
+        largeActionTimer?.invalidate()
+        largeActionTimer = nil
         animationTimer?.invalidate()
         animationTimer = nil
         ambientSuite = []
         ambientSuiteStep = 0
+        activeActionSize = nil
         isPlayingAmbientAction = false
     }
 
@@ -579,7 +659,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
         isHovering = true
         stopAmbientAnimation()
-        playAmbientAction()
+        playAmbientAction(size: .large)
     }
 
     private func endHovering() {
@@ -589,17 +669,26 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         stopAmbientAnimation()
         petView?.settle(status: currentStatus)
-        scheduleAmbientAction()
+        scheduleAmbientActions(initialDelay: true)
     }
 
     private func hoverSuite() -> [PetAnimation] {
         switch currentStatus {
         case .working:
-            return [.review, .running, .review]
+            return [.review, .turning, .review]
         case .waiting:
-            return [.waiting, .idle, .waiting]
+            return [.waiting, .turning, .waiting]
         case .offline:
             return [.failed]
+        }
+    }
+
+    private func frameInterval(for animation: PetAnimation) -> TimeInterval {
+        switch animation {
+        case .turning:
+            return 0.36
+        default:
+            return 0.24
         }
     }
 
@@ -611,7 +700,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private func endDragging() {
         isDragging = false
         petView?.settle(status: currentStatus)
-        scheduleAmbientAction()
+        scheduleAmbientActions(initialDelay: true)
     }
 
     private func initialWindowFrame() -> NSRect {
