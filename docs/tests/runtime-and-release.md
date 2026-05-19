@@ -100,16 +100,15 @@ PASS status logic
 预期结果：
 
 - `dist/CodexPetCompanion-macos-arm64-2026.5.1.zip` 存在。
-- `dist/CodexPetCompanion-macos-arm64.zip` 存在。
 - `dist/SHA256SUMS.txt` 存在。
-- 两个 zip 的 SHA256 相同。
+- `SHA256SUMS.txt` 只包含带版本号的 zip。
 
 ## 用例 4：Release zip 元数据检查
 
 执行命令：
 
 ```bash
-unzip -l dist/CodexPetCompanion-macos-arm64.zip | rg '__MACOSX|\.DS_Store|\._'
+unzip -l dist/CodexPetCompanion-macos-arm64-2026.5.1.zip | rg '__MACOSX|\.DS_Store|\._'
 ```
 
 预期结果：无输出，命令退出码为 `1`。
@@ -144,4 +143,4 @@ gh release view v2026.5.1 --json url,tagName,name,assets,isDraft,isPrerelease,pu
 - `isDraft=false`。
 - `isPrerelease=false`。
 - `targetCommitish=main`。
-- assets 包含两个 zip 和 `SHA256SUMS.txt`。
+- assets 包含带版本号的 zip 和 `SHA256SUMS.txt`。

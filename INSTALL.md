@@ -8,7 +8,7 @@
 
 当前支持的 Release 包：
 
-- `CodexPetCompanion-macos-arm64.zip`：Apple Silicon Mac。
+- `CodexPetCompanion-macos-arm64-<version>.zip`：Apple Silicon Mac。
 
 下载后解压，进入解压目录执行：
 
@@ -38,7 +38,7 @@ CODEX_PET_INSTALL_DIR="$HOME/.codex/pet-companion-dev" ./install-release.sh
 如果让 Codex 代为安装，可以直接给它这句：
 
 ```text
-下载 https://github.com/312362115/codex-pet/releases/latest 中的 CodexPetCompanion-macos-arm64.zip，解压后执行 install-release.sh，完成后确认 CodexPetCompanion 进程已启动。
+下载 https://github.com/312362115/codex-pet/releases/latest 中带版本号的 CodexPetCompanion-macos-arm64-<version>.zip，解压后执行 install-release.sh，完成后确认 CodexPetCompanion 进程已启动。
 ```
 
 ## 维护者：生成 Release 包
@@ -52,10 +52,9 @@ CODEX_PET_INSTALL_DIR="$HOME/.codex/pet-companion-dev" ./install-release.sh
 输出文件：
 
 - `dist/CodexPetCompanion-macos-arm64-2026.5.1.zip`
-- `dist/CodexPetCompanion-macos-arm64.zip`
 - `dist/SHA256SUMS.txt`
 
-上传到 GitHub Release 时，建议同时上传带版本号的 zip、稳定文件名 zip 和 `SHA256SUMS.txt`。稳定文件名方便用户和 Codex 始终下载 latest asset。
+上传到 GitHub Release 时，只上传带版本号的 zip 和 `SHA256SUMS.txt`。不再上传稳定文件名 zip，避免 Release 页面出现两个内容相同的 arm64 包。
 
 ## 开发者：从源码安装
 

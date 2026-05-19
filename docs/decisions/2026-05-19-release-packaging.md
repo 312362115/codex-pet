@@ -12,7 +12,7 @@
 
 仓库保留源码安装能力，但文档和交付方式以 GitHub Release 预编译包为主：
 
-- 普通用户下载 `CodexPetCompanion-macos-arm64.zip`。
+- 普通用户下载带版本号的 `CodexPetCompanion-macos-arm64-<version>.zip`。
 - 解压后执行包内的 `install-release.sh`。
 - 不需要克隆源码，不需要本地编译 Swift。
 - 维护者使用 `scripts/package-release.sh` 生成 zip 和 checksum。
@@ -22,10 +22,9 @@
 每次 Release 建议上传：
 
 - `CodexPetCompanion-macos-arm64-<version>.zip`
-- `CodexPetCompanion-macos-arm64.zip`
 - `SHA256SUMS.txt`
 
-稳定文件名 `CodexPetCompanion-macos-arm64.zip` 方便 Codex 或脚本始终下载 latest asset；带版本号文件方便归档和人工核对。
+只上传带版本号的 zip，避免 Release 页面出现两个内容完全相同的 arm64 包。用户始终从 GitHub latest release 页面下载当前版本的版本化 zip。
 
 ## 打包细节
 
@@ -44,7 +43,7 @@
 - zip 需要检查不包含 macOS 元数据：
 
 ```bash
-unzip -l dist/CodexPetCompanion-macos-arm64.zip | rg '__MACOSX|\.DS_Store|\._'
+unzip -l dist/CodexPetCompanion-macos-arm64-<version>.zip | rg '__MACOSX|\.DS_Store|\._'
 ```
 
 该命令无输出才符合预期。

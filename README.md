@@ -27,7 +27,7 @@
 
 [https://github.com/312362115/codex-pet/releases/latest](https://github.com/312362115/codex-pet/releases/latest)
 
-下载 `CodexPetCompanion-macos-arm64.zip`，解压后执行：
+下载带版本号的 `CodexPetCompanion-macos-arm64-<version>.zip`，解压后执行：
 
 ```bash
 ./install-release.sh

@@ -132,7 +132,6 @@ https://github.com/312362115/codex-pet/releases/tag/v2026.5.1
 
 Release 资产：
 
-- `CodexPetCompanion-macos-arm64.zip`
 - `CodexPetCompanion-macos-arm64-2026.5.1.zip`
 - `SHA256SUMS.txt`
 
@@ -160,7 +159,7 @@ Release 资产：
 
 - `./scripts/test-status-logic.sh`：状态分类、动画映射、动作策略测试，输出 `PASS status logic`。
 - `./scripts/package-release.sh --version 2026.5.1`：构建、签名、生成 Release zip 和 checksum。
-- `unzip -l dist/CodexPetCompanion-macos-arm64.zip | rg '__MACOSX|\.DS_Store|\._'`：确认 zip 不含 macOS 元数据。
+- `unzip -l dist/CodexPetCompanion-macos-arm64-2026.5.1.zip | rg '__MACOSX|\.DS_Store|\._'`：确认 zip 不含 macOS 元数据。
 - `CODEX_PET_INSTALL_DIR=/private/tmp/codex-pet-release-test ./dist/CodexPetCompanion-macos-arm64/install-release.sh --no-restart`：确认 Release 包内安装脚本不依赖源码编译。
 
 ## 后续注意事项

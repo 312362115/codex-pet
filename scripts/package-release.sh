@@ -26,7 +26,6 @@ Options:
 
 Output:
   dist/CodexPetCompanion-macos-arm64-<version>.zip
-  dist/CodexPetCompanion-macos-arm64.zip
   dist/SHA256SUMS.txt
 USAGE
 }
@@ -71,7 +70,7 @@ fi
 VERSION="${VERSION#v}"
 PACKAGE_DIR="$DIST_DIR/$PACKAGE_NAME"
 VERSIONED_ZIP="$DIST_DIR/$PACKAGE_NAME-$VERSION.zip"
-LATEST_ZIP="$DIST_DIR/$PACKAGE_NAME.zip"
+LEGACY_UNVERSIONED_ZIP="$DIST_DIR/$PACKAGE_NAME.zip"
 
 echo "==> Packaging CodexPetCompanion $VERSION for $PLATFORM"
 
@@ -93,7 +92,7 @@ codesign --force --deep --sign - "$BUILD_APP"
 codesign --verify --deep --strict "$BUILD_APP"
 
 echo "==> Preparing package directory"
-rm -rf "$PACKAGE_DIR" "$VERSIONED_ZIP" "$LATEST_ZIP"
+rm -rf "$PACKAGE_DIR" "$VERSIONED_ZIP" "$LEGACY_UNVERSIONED_ZIP"
 mkdir -p "$PACKAGE_DIR"
 ditto "$BUILD_APP" "$PACKAGE_DIR/CodexPetCompanion.app"
 
@@ -181,15 +180,13 @@ README
 
 echo "==> Creating zip archives"
 ditto -c -k --norsrc --keepParent "$PACKAGE_DIR" "$VERSIONED_ZIP"
-cp "$VERSIONED_ZIP" "$LATEST_ZIP"
 
 echo "==> Writing checksums"
 (
   cd "$DIST_DIR"
-  shasum -a 256 "$(basename "$VERSIONED_ZIP")" "$(basename "$LATEST_ZIP")" > SHA256SUMS.txt
+  shasum -a 256 "$(basename "$VERSIONED_ZIP")" > SHA256SUMS.txt
 )
 
 echo "==> Release artifacts"
 echo "    $VERSIONED_ZIP"
-echo "    $LATEST_ZIP"
 echo "    $DIST_DIR/SHA256SUMS.txt"

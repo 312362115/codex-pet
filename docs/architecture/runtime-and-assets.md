@@ -191,8 +191,7 @@ dist/
     install-release.sh
     README.txt
   CodexPetCompanion-macos-arm64-<version>.zip
-  CodexPetCompanion-macos-arm64.zip
   SHA256SUMS.txt
 ```
 
-稳定文件名 `CodexPetCompanion-macos-arm64.zip` 用于 GitHub latest asset 下载，带版本号文件用于明确归档。
+Release 只上传带版本号的 zip，避免同一版本出现两个内容相同的 arm64 包。
