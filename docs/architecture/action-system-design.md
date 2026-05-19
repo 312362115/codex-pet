@@ -41,26 +41,79 @@ premultiplied-alpha 整帧补间适合轮廓变化小的动作，例如眨眼、
 
 ## 角色行为模型
 
-动作体系分为四个并行但受调度器约束的层：
+动作体系分为五个层次。`PetPresentationState` 是当前角色可以长期停留的展示状态，不再把其它姿态都当作插播动作。
 
 ```text
-Codex 状态
-  -> 基础姿态层 Pose
+Codex 元数据
+  -> CodexWorkPhase
+  -> PetPresentationState
+  -> 状态切换动作 Transition
+  -> 状态内动作 Ambient
   -> 表情语义 Expression
   -> 微动作层 Micro Motion
-  -> 主动作层 Action
   -> 交互反馈层 Interaction
 ```
 
 | 层 | 职责 | 是否常驻 | 是否可叠加 | 示例 |
 |----|------|----------|------------|------|
-| Pose | 当前状态的基础身体姿态 | 是 | 否 | `review`、`waiting`、`failed` |
+| Presentation State | 当前可长期停留的展示状态 | 是 | 否 | `reviewFocused`、`toolRunning`、`waitingAttentive` |
+| Transition | 展示状态切换时的进入/离开动作 | 否 | 否 | `wake-up`、`adjust-glasses`、`cursor-look` |
 | Expression | 动作自带的脸部、眼神、情绪语义 | 否 | 不叠加 | `focused`、`curious`、`happy`、`tired` |
 | Micro Motion | 很轻的生命感 | 是 | 可叠加 | 呼吸、重心微移、头发轻摆 |
-| Action | 有明确开始和结束的动作 | 否 | 一般互斥 | 挥手、扶眼镜、看向侧边、伸展 |
+| Ambient Action | 当前展示状态内的短动作 | 否 | 一般互斥 | 挥手、扶眼镜、查看笔记、伸展 |
 | Interaction | 用户触发的反馈 | 否 | 高优先级 | hover 看向光标、拖动暂停、右键关注 |
 
-这套模型的关键是：基础姿态常驻，动作短暂插入，表情由当前姿态或动作 clip 自带。动作结束后必须自然回到当前状态的基础姿态，而不是停在动作中间。
+这套模型的关键是：展示状态常驻，动作短暂插入，表情由当前姿态或动作 clip 自带。动作结束后必须自然回到当前 `PetPresentationState`，而不是统一回到 `review`、`waiting` 或 `failed`。对于 `toolRunning`、`completedCalm`、`longWorkTired` 这类动作感更强的展示状态，runtime 会停在动作 clip 中段的可读帧，避免所有终态看起来都像旧版第 0 帧静图。
+
+展示状态不能随每一次元数据轻微变化立刻跳转。runtime 使用 `PetPresentationTransitionPolicy` 做状态防抖：当前状态有最小停留时间，候选状态需要持续命中后才生效；只有离线和错误状态保持即时切换。这样可以避免 `reviewFocused`、`toolRunning`、`waitingAttentive` 在短时间里互相抢位。
+
+## Codex 联动状态机
+
+当前只读取 Codex 本地元数据，不读取 session 正文、用户消息、模型回复或代码内容。元数据先进入 `CodexWorkPhase`，再映射为桌宠可停留展示状态：
+
+| CodexWorkPhase | PetPresentationState | 触发依据 | 语义 |
+|----------------|----------------------|----------|------|
+| `offline` | `offlineRest` | Codex 进程不存在 | Codex 暂不可用。 |
+| `idle` | `idleRelaxed` | 无近期线程活动、无活跃 job/goal | 待命，不打扰。 |
+| `thinking` | `reviewFocused` | 近期线程有更新，且无 running job | 正在思考或整理上下文。 |
+| `runningTool` | `toolRunning` | `agent_jobs` / `agent_job_items` 有 running/pending，或 `logs_2.sqlite` 最近 8 秒出现工具相关 `target` | 正在执行工具或任务。 |
+| `waitingUser` | `waitingAttentive` | 近期线程有活动但短时间未更新 | 等待用户确认或下一步输入。 |
+| `blocked` | `blockedConcerned` | 最近 error 日志或 failed job | 遇到错误，需要关注。 |
+| `completed` | `completedCalm` | 最近 job/goal 完成 | 当前轮次完成，短暂确认。 |
+| `longWorking` | `longWorkTired` | 连续活跃超过阈值 | 工作时间较长，需要舒展提醒。 |
+
+```mermaid
+stateDiagram-v2
+    [*] --> offlineRest
+    offlineRest --> idleRelaxed: Codex 启动
+    idleRelaxed --> reviewFocused: 新线程活动
+    idleRelaxed --> waitingAttentive: 近期活动后等待
+    reviewFocused --> toolRunning: job/tool running
+    reviewFocused --> waitingAttentive: 活动停顿
+    reviewFocused --> blockedConcerned: error/failed
+    reviewFocused --> completedCalm: complete
+    reviewFocused --> longWorkTired: 连续工作超阈值
+    toolRunning --> reviewFocused: job 正常结束
+    toolRunning --> blockedConcerned: job failed
+    waitingAttentive --> reviewFocused: 用户继续输入
+    waitingAttentive --> idleRelaxed: 长时间无活动
+    blockedConcerned --> reviewFocused: 新活动或重试
+    completedCalm --> idleRelaxed: 冷却结束
+    completedCalm --> reviewFocused: 新任务开始
+    longWorkTired --> reviewFocused: 继续工作
+    longWorkTired --> idleRelaxed: 工作中断
+```
+
+| 展示状态 | 停留姿态 | 进入动作 | 状态内动作 |
+|----------|----------|----------|------------|
+| `offlineRest` | `failed` | 无 | 无或极低频静止。 |
+| `idleRelaxed` | `waiting` | `shoulder-relax` | `breathing`、`weight-shift`、`shoulder-relax`、`hair-sway`。 |
+| `waitingAttentive` | `waiting` | `cursor-look` | `cursor-look`、`waving`、`hover-smile`。 |
+| `reviewFocused` | `review` | `adjust-glasses` | `adjust-glasses`、`thinking`、`nod`、`check-notes`。 |
+| `toolRunning` | `tap-keyboard` 中段帧 | `tap-keyboard` | `tap-keyboard`、`focus-shift`、`check-notes`。 |
+| `blockedConcerned` | `failed` 中后段帧 | `tired-soften` | `glance-left/right`、`shoulder-relax`。 |
+| `completedCalm` | `nod` 中后段帧 | `nod`、`hover-smile` | `hover-smile`、`nod`、`shoulder-relax`。 |
+| `longWorkTired` | `stretch-wrist` 中段帧 | `stretch-wrist` | `stretch-wrist`、`shoulder-relax`、`fix-posture`。 |
 
 ## 表情体系
 

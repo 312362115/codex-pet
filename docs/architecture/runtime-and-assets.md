@@ -4,9 +4,9 @@
 
 | 模块 | 文件 | 职责 |
 |------|------|------|
-| AppKit 入口 | `Sources/CodexPetCompanion/main.swift` | 创建透明悬浮窗、绘制宠物、处理拖动、右键菜单、定时动作和状态轮询。 |
-| 状态与策略 | `Sources/PetCompanion/CodexActivityStatus.swift` | 定义 Codex 状态、动画枚举、状态分类、帧数、动作时长和动作套组策略。 |
-| 策略测试 | `Tests/PetCompanionStatusTestRunner.swift` | 验证状态分类、动画映射、帧数和动作套组。 |
+| AppKit 入口 | `Sources/CodexPetCompanion/main.swift` | 创建透明悬浮窗、绘制宠物、处理拖动、右键菜单、定时动作、状态轮询和 Codex 元数据只读查询。 |
+| 状态与策略 | `Sources/PetCompanion/CodexActivityStatus.swift` | 定义 Codex 粗状态、工作阶段、宠物展示状态、动画枚举、状态分类、帧数、动作时长和动作套组策略。 |
+| 策略测试 | `Tests/PetCompanionStatusTestRunner.swift` | 验证状态分类、展示状态映射、动画映射、帧数和动作套组。 |
 | 运行帧生成 | `scripts/build-shirt-skirt-assets.py` | 从参考图生成 `assets/lingxi-ol-hires/` 运行时 PNG 帧。 |
 | 源码安装 | `scripts/install.sh` | 测试、构建、签名、安装并重启本机桌宠。 |
 | Release 打包 | `scripts/package-release.sh` | 生成 GitHub Release 预编译 zip 和 checksum。 |
@@ -15,8 +15,10 @@
 
 ```text
 CodexActivityReader
-  -> CodexActivityClassifier
-  -> AppDelegate.handleStatus
+  -> CodexMetadataReader
+  -> CodexWorkPhaseClassifier
+  -> PetPresentationState
+  -> AppDelegate.handlePresentationState
   -> PetAmbientActionPolicy
   -> PetView.play / PetView.settle
   -> PetFrameProvider
@@ -29,40 +31,62 @@ CodexActivityReader
 
 ## 状态读取
 
-当前只做轻量本地联动：
+当前只做轻量本地联动，并且只读取 Codex 元数据：
 
 - 进程存在：`com.openai.codex` 或应用名 `Codex`。
 - 最近活动：读取 `.codex` 下几个状态文件的修改时间。
-- 不读取、不解析、不保存任何对话内容。
+- `state_5.sqlite`：只读 `threads`、`thread_goals`、`agent_jobs`、`agent_job_items` 的状态、时间戳和计数字段。
+- `logs_2.sqlite`：只统计最近错误级别、工具相关 `target` 和时间戳，不读取 `feedback_log_body`。
+- 不读取、不解析、不保存 rollout/session JSONL 正文、用户消息、模型回复或代码内容。
 
 默认阈值：
 
 - `activeThreshold = 8s`：最近活动视为工作中。
-- `waitingThreshold = 90s`：目前工作态之外统一落到等待态，保留阈值用于后续扩展。
+- `waitingThreshold = 90s`：最近有线程活动但短时间没有更新时视为等待用户。
+- `longWorkingThreshold = 50m`：连续活跃超过阈值时进入长时间工作展示状态。
+
+为了避免状态抖动，runtime 对展示状态额外做防抖：
+
+- 非错误/离线状态切换必须先满足当前状态最小停留时间。
+- 候选状态需要持续命中一小段时间后才生效。
+- `blockedConcerned` 和 `offlineRest` 保持即时切换，避免错误和离线反馈被延迟。
+
+Codex 元数据先被分类为 `CodexWorkPhase`，再映射为可长期停留的 `PetPresentationState`：
+
+| CodexWorkPhase | PetPresentationState | 展示文案 | 停留姿态 |
+|----------------|----------------------|----------|----------|
+| `offline` | `offlineRest` | `Codex 离线` | `failed` |
+| `idle` | `idleRelaxed` | `Codex 待命` | `waiting` |
+| `thinking` | `reviewFocused` | `正在思考` | `review` |
+| `runningTool` | `toolRunning` | `运行工具中` | `tap-keyboard` |
+| `waitingUser` | `waitingAttentive` | `等待你确认` | `waiting` |
+| `blocked` | `blockedConcerned` | `遇到错误` | `failed` |
+| `completed` | `completedCalm` | `这轮完成` | `nod` |
+| `longWorking` | `longWorkTired` | `连续工作中` | `stretch-wrist` |
 
 ## 动作策略
 
-当前动作被分为基础姿态、微动作、小动作、中/大动作、交互动作和调试动作，并通过统一时间线处理冲突。表情不再作为独立 runtime 层调度，而是作为动作 clip 自带的语义和画面内容：
+当前动作被分为展示状态、微动作、小动作、中/大动作、交互动作和调试动作，并通过统一时间线处理冲突。展示状态是一等公民，动作结束后回到当前 `PetPresentationState` 的停留姿态，而不是统一回到 `working/waiting/offline` 的单一基础图。
 
 | 类型 | 策略 |
 |------|------|
-| 静止态 | `working -> review`，`waiting -> waiting`，`offline -> failed`。 |
-| 微动作 | `breathing`、`hair-sway`、`weight-shift`、`shoulder-relax`、`tiny-hand-adjust`，由独立 timer 低干扰插入。 |
-| 小动作 | 工作态轮换 `adjust-glasses`、`thinking`、`nod`、`tap-keyboard`、`check-notes`、`stretch-wrist`；等待态轮换 `waving`。这些动作后续应自带合适表情。 |
-| 中/大动作 | 工作态轮换 `glance-left/right`、`focus-shift`、`fix-posture`、`posture-reset`、`stretch`；等待态低频加入 `adjust-outfit`、`look-around`、`step-aside`。 |
-| 交互动作 | hover 按状态轮换短反馈：working 使用 `cursor-look`、`focus-shift`、`nod`，waiting 使用 `cursor-look`、`waving`；右键触发 `context-menu-attend`；drag 释放触发 `drag-release-settle`。 |
+| 展示状态 | `offlineRest`、`idleRelaxed`、`reviewFocused`、`toolRunning`、`waitingAttentive`、`blockedConcerned`、`completedCalm`、`longWorkTired` 都可作为最终展示状态；终态会停在动作 clip 的可读帧，不统一停在第 0 帧。 |
+| 微动作 | 根据展示状态选择 `breathing`、`hair-sway`、`weight-shift`、`shoulder-relax`、`tiny-hand-adjust`，由独立 timer 低干扰插入。 |
+| 小动作 | `reviewFocused` 偏审阅动作，`toolRunning` 偏工具运行动作，`waitingAttentive` 偏回应用户动作，`longWorkTired` 偏舒展恢复动作。 |
+| 中/大动作 | 按展示状态低频选择 `glance-left/right`、`focus-shift`、`fix-posture`、`posture-reset`、`stretch`、`look-around` 等动作。 |
+| 交互动作 | hover 按展示状态轮换短反馈：等待态看光标/挥手，思考态收紧专注/扶眼镜，工具态敲键盘/切换焦点，完成态微笑/点头；右键触发 `context-menu-attend`；drag 释放触发 `drag-release-settle`。 |
 | 调试动作 | `turning` 只保留为调试/素材检查，不进入默认调度。 |
 
-所有动作都不连续 loop，播完回到当前状态的静止态。
+所有动作都不连续 loop，播完回到当前展示状态的停留姿态。
 
 调度器拆分为三类 timer 和一类事件触发：
 
 | 调度器 | 运行节奏 | 冲突策略 |
 |--------|----------|----------|
-| 微动作调度 | working `6-14s`，waiting `7-16s` | 微动作是最低干扰 ambient；主动作到点时可被更明显动作打断。 |
-| 小动作调度 | working `12-30s`，waiting `10-25s` | 小动作可短暂排队，状态变化或交互时丢弃。 |
-| 大动作调度 | working `120-210s`，waiting `90-180s` | 只在空窗执行，忙碌、hover、状态刚切换时丢弃。 |
-| 交互调度 | hover、右键、drag、状态变化事件驱动 | 可打断 ambient，拖动优先级最高。 |
+| 微动作调度 | working `14-30s`，waiting `18-36s` | 微动作是最低干扰 ambient；hover 时暂停。 |
+| 小动作调度 | working `32-68s`，waiting `35-75s` | 小动作可短暂排队，状态变化或交互时丢弃。 |
+| 大动作调度 | working `220-360s`，waiting `200-340s` | 只在空窗执行，忙碌、hover、状态刚切换时丢弃。 |
+| 交互调度 | hover、右键、drag、状态变化事件驱动 | hover 不抢正在播放的可见动作；右键和拖动仍是高优先级。 |
 
 当前高频动作帧数：
 

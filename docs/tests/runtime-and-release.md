@@ -19,12 +19,26 @@ PASS status logic
 覆盖范围：
 
 - Codex 离线、工作中、等待输入分类。
+- Codex 元数据阶段分类：`offline`、`idle`、`thinking`、`runningTool`、`waitingUser`、`blocked`、`completed`、`longWorking`。
+- `CodexWorkPhase -> PetPresentationState` 映射。
+- `PetPresentationTransitionPolicy` 的最小停留时间、候选状态确认和错误即时切换。
 - 状态到动画的映射。
 - 各动画帧数。
 - 动作总时长和按帧数自适应的单帧间隔。
-- 静止、微动作、小动作、中/大动作、交互和调试动作策略；独立表情动作不进入默认调度。
+- 展示状态、微动作、小动作、中/大动作、交互和调试动作策略；独立表情动作不进入默认调度。
 - 动作 catalog 的层级分类。
-- 统一 timeline 的冲突决策：小动作排队、可见动作打断微动作、大动作丢弃、hover 打断、drag 抑制、过期状态动作丢弃。
+- 统一 timeline 的冲突决策：小动作排队、可见动作打断微动作、大动作丢弃、hover 节流、drag 抑制、过期状态动作丢弃。
+
+展示状态停留姿态预期：
+
+- `offlineRest`：`failed`。
+- `idleRelaxed`：`waiting`。
+- `reviewFocused`：`review`。
+- `toolRunning`：`tap-keyboard`。
+- `waitingAttentive`：`waiting`。
+- `blockedConcerned`：`failed`。
+- `completedCalm`：`nod`。
+- `longWorkTired`：`stretch-wrist`。
 
 关键帧数预期：
 

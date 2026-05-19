@@ -4,6 +4,8 @@ import Foundation
 struct StatusTestRunner {
     static func main() {
         let classifier = CodexActivityClassifier()
+        let phaseClassifier = CodexWorkPhaseClassifier()
+        let transitionPolicy = PetPresentationTransitionPolicy()
         let mapper = PetAnimationMapper()
         let now = Date(timeIntervalSince1970: 1_000)
 
@@ -40,6 +42,100 @@ struct StatusTestRunner {
         expect(mapper.animation(for: .offline) == .failed, "offline should map to failed animation")
         expect(mapper.animation(for: .working) == .running, "working should map to running animation")
         expect(mapper.animation(for: .waiting) == .waiting, "waiting should map to waiting animation")
+
+        expect(phaseClassifier.classify(CodexMetadataSnapshot(
+            codexIsRunning: false,
+            latestActivityDate: now,
+            now: now
+        )) == .offline, "metadata phase should be offline when Codex is not running")
+        expect(phaseClassifier.classify(CodexMetadataSnapshot(
+            codexIsRunning: true,
+            latestActivityDate: now,
+            hasRecentError: true,
+            now: now
+        )) == .blocked, "recent errors should map to blocked phase")
+        expect(phaseClassifier.classify(CodexMetadataSnapshot(
+            codexIsRunning: true,
+            latestActivityDate: now,
+            continuousActiveDuration: 60 * 60,
+            now: now
+        )) == .longWorking, "long active sessions should map to long working phase")
+        expect(phaseClassifier.classify(CodexMetadataSnapshot(
+            codexIsRunning: true,
+            latestActivityDate: now,
+            hasRunningJob: true,
+            now: now
+        )) == .runningTool, "running jobs should map to tool-running phase")
+        expect(phaseClassifier.classify(CodexMetadataSnapshot(
+            codexIsRunning: true,
+            latestActivityDate: now,
+            hasRecentToolEvent: true,
+            now: now
+        )) == .runningTool, "recent tool log metadata should map to tool-running phase")
+        expect(phaseClassifier.classify(CodexMetadataSnapshot(
+            codexIsRunning: true,
+            latestActivityDate: now.addingTimeInterval(-30),
+            hasRecentCompletedJob: true,
+            now: now
+        )) == .completed, "recent completed jobs should map to completed phase")
+        expect(phaseClassifier.classify(CodexMetadataSnapshot(
+            codexIsRunning: true,
+            latestActivityDate: now.addingTimeInterval(-3),
+            activeThreadUpdatedAt: now.addingTimeInterval(-3),
+            now: now
+        )) == .thinking, "recent thread activity should map to thinking phase")
+        expect(phaseClassifier.classify(CodexMetadataSnapshot(
+            codexIsRunning: true,
+            latestActivityDate: now.addingTimeInterval(-3),
+            activeThreadUpdatedAt: now.addingTimeInterval(-30),
+            now: now
+        )) == .thinking, "fresh log metadata should keep the active thread in thinking phase")
+        expect(phaseClassifier.classify(CodexMetadataSnapshot(
+            codexIsRunning: true,
+            latestActivityDate: now.addingTimeInterval(-30),
+            activeThreadUpdatedAt: now.addingTimeInterval(-30),
+            now: now,
+            activeThreshold: 8,
+            waitingThreshold: 90
+        )) == .waitingUser, "recent but inactive thread should wait for user")
+        expect(phaseClassifier.classify(CodexMetadataSnapshot(
+            codexIsRunning: true,
+            latestActivityDate: now.addingTimeInterval(-200),
+            activeThreadUpdatedAt: now.addingTimeInterval(-200),
+            now: now,
+            waitingThreshold: 90
+        )) == .idle, "stale metadata should map to idle")
+        expect(CodexWorkPhase.runningTool.presentationState == .toolRunning, "running tool phase should settle into tool-running presentation")
+        expect(CodexWorkPhase.waitingUser.presentationState == .waitingAttentive, "waiting user phase should settle into attentive waiting")
+        expect(PetPresentationState.toolRunning.coarseStatus == .working, "tool-running presentation should keep working compatibility")
+        expect(!transitionPolicy.canSwitch(
+            from: .toolRunning,
+            currentStateSince: now.addingTimeInterval(-3),
+            to: .reviewFocused,
+            candidateStateSince: now.addingTimeInterval(-3),
+            now: now
+        ), "tool-running should not be replaced before the minimum dwell")
+        expect(!transitionPolicy.canSwitch(
+            from: .reviewFocused,
+            currentStateSince: now.addingTimeInterval(-20),
+            to: .waitingAttentive,
+            candidateStateSince: now.addingTimeInterval(-2),
+            now: now
+        ), "waiting should be confirmed before interrupting a focused state")
+        expect(transitionPolicy.canSwitch(
+            from: .reviewFocused,
+            currentStateSince: now.addingTimeInterval(-20),
+            to: .waitingAttentive,
+            candidateStateSince: now.addingTimeInterval(-6),
+            now: now
+        ), "confirmed waiting should switch after focused dwell")
+        expect(transitionPolicy.canSwitch(
+            from: .toolRunning,
+            currentStateSince: now,
+            to: .blockedConcerned,
+            candidateStateSince: now,
+            now: now
+        ), "blocked state should remain urgent")
 
         let framePolicy = PetAnimationFramePolicy()
         expect(framePolicy.frameCount(for: .idle) == 10, "idle should use still pose frames")
@@ -92,21 +188,32 @@ struct StatusTestRunner {
         expect(ambientPolicy.restingAnimation(for: .working) == .review, "working should rest in a focused pose")
         expect(ambientPolicy.restingAnimation(for: .waiting) == .waiting, "waiting should rest in a waiting pose")
         expect(ambientPolicy.restingAnimation(for: .offline) == .failed, "offline should rest in failed pose")
+        expect(ambientPolicy.restingAnimation(for: .toolRunning) == .tapKeyboard, "tool-running should have a distinct final display pose")
+        expect(ambientPolicy.restingAnimation(for: .blockedConcerned) == .failed, "blocked should settle into a concerned failed-like pose")
+        expect(ambientPolicy.restingAnimation(for: .completedCalm) == .nod, "completed should settle into a calm completion pose")
+        expect(ambientPolicy.restingAnimation(for: .longWorkTired) == .stretchWrist, "long work should settle into a tired work pose")
+        expect(ambientPolicy.restingFrameIndex(for: .toolRunning, frameCount: 24) > 0, "tool-running should settle on a readable in-action frame")
+        expect(ambientPolicy.restingFrameIndex(for: .completedCalm, frameCount: 16) > 0, "completed should settle on a readable completion frame")
         expect(ambientPolicy.microActionSuites(for: .working) == [[.breathing], [.tinyHandAdjust], [.hairSway]], "working should include subtle non-face micro action suites")
-        expect(ambientPolicy.microActionSuites(for: .waiting) == [[.breathing], [.weightShift], [.shoulderRelax], [.tinyHandAdjust], [.hairSway]], "waiting should include idle non-face micro action suites")
-        expect(ambientPolicy.ambientSuites(for: .working) == [[.adjustGlasses], [.thinking], [.nod], [.tapKeyboard], [.checkNotes], [.stretchWrist]], "working should use focused short action suites")
-        expect(ambientPolicy.ambientSuites(for: .waiting) == [[.waving]], "waiting should use action clips with baked expressions")
+        expect(ambientPolicy.microActionSuites(for: .waiting) == [[.breathing], [.tinyHandAdjust], [.hairSway]], "waiting should include attentive micro action suites")
+        expect(ambientPolicy.microActionSuites(for: .idleRelaxed).contains([.weightShift]), "idle relaxed should keep idle weight shifts")
+        expect(ambientPolicy.ambientSuites(for: .working) == [[.adjustGlasses], [.thinking], [.nod], [.checkNotes]], "working should use focused short action suites")
+        expect(ambientPolicy.ambientSuites(for: .waiting) == [[.cursorLook], [.waving], [.hoverSmile]], "waiting should use attentive action clips")
         expect(ambientPolicy.ambientSuites(for: .offline) == [], "offline should rest without extra ambient actions")
         expect(ambientPolicy.ambientAnimations(for: .waiting).contains(.waving), "waiting should include visible short actions")
         expect(!ambientPolicy.ambientAnimations(for: .waiting).contains(.turning), "waiting should avoid inconsistent turntable frames")
         expect(!ambientPolicy.largeActionSuites(for: .working).flatMap { $0 }.contains(.turning), "working should avoid full turntable in default large actions")
         expect(!ambientPolicy.largeActionSuites(for: .waiting).flatMap { $0 }.contains(.turning), "waiting should avoid full turntable in default large actions")
-        expect(ambientPolicy.largeActionSuites(for: .working) == [[.glanceLeft], [.glanceRight], [.focusShift], [.fixPosture], [.postureReset], [.stretch]], "working large actions should include attention and posture clips")
-        expect(ambientPolicy.largeActionSuites(for: .waiting) == [[.glanceLeft], [.glanceRight], [.adjustOutfit], [.lookAround], [.postureReset], [.stretch], [.stepAside]], "waiting large actions should include exploratory and reset clips")
+        expect(ambientPolicy.largeActionSuites(for: .working) == [[.glanceLeft], [.glanceRight], [.focusShift], [.fixPosture], [.postureReset]], "working large actions should include attention and posture clips")
+        expect(ambientPolicy.largeActionSuites(for: .waiting) == [[.glanceLeft], [.glanceRight], [.adjustOutfit], [.lookAround]], "waiting large actions should include attentive exploratory clips")
         expect(ambientPolicy.largeActionSuites(for: .offline) == [], "offline should avoid large ambient actions")
-        expect(ambientPolicy.hoverActionSuites(for: .working) == [[.cursorLook], [.focusShift], [.nod]], "working hover should rotate through focused short reactions")
-        expect(ambientPolicy.hoverActionSuites(for: .waiting) == [[.cursorLook], [.waving]], "waiting hover should rotate through greeting reactions")
+        expect(ambientPolicy.hoverActionSuites(for: .working) == [[.focusTighten], [.adjustGlasses], [.thinking]], "working hover should rotate through focused short reactions")
+        expect(ambientPolicy.hoverActionSuites(for: .waiting) == [[.cursorLook, .hoverSmile], [.waving]], "waiting hover should rotate through greeting reactions")
         expect(ambientPolicy.hoverActionSuites(for: .offline) == [[.failed]], "offline hover should keep the failed pose")
+        expect(ambientPolicy.hoverActionSuites(for: .toolRunning) == [[.tapKeyboard], [.focusShift], [.checkNotes]], "tool-running hover should be visibly different from waiting hover")
+        expect(ambientPolicy.smallActionSuites(for: .toolRunning) == [[.tapKeyboard], [.checkNotes], [.focusShift]], "tool-running should use tool-oriented actions")
+        expect(ambientPolicy.smallActionSuites(for: .blockedConcerned).contains([.shoulderRelax]), "blocked should use low-energy recovery actions")
+        expect(ambientPolicy.largeActionSuites(for: .longWorkTired) == [[.stretch], [.postureReset]], "long work should use rest-oriented large actions")
 
         let catalog = PetActionCatalog()
         expect(catalog.descriptor(for: .blink)?.layer == .expression, "blink should remain a legacy expression descriptor")
@@ -127,7 +234,7 @@ struct StatusTestRunner {
 
         let timeline = PetActionTimeline()
         let busyState = PetActionTimelineState(
-            currentStatus: .waiting,
+            currentPresentationState: .waitingAttentive,
             currentLayer: .small,
             currentPriority: .p2,
             reservedUntil: now.addingTimeInterval(1.0),
@@ -137,25 +244,25 @@ struct StatusTestRunner {
             lastInteractionAt: now.addingTimeInterval(-30)
         )
         let queuedSmall = timeline.decide(
-            request: PetActionRequest(animation: .waving, sourceStatus: .waiting, submittedAt: now),
+            request: PetActionRequest(animation: .waving, sourcePresentationState: .waitingAttentive, submittedAt: now),
             state: busyState
         )
         expect(queuedSmall.outcome == .queue, "small actions may queue behind another small action")
 
         let droppedLarge = timeline.decide(
-            request: PetActionRequest(animation: .lookAround, sourceStatus: .waiting, submittedAt: now),
+            request: PetActionRequest(animation: .lookAround, sourcePresentationState: .waitingAttentive, submittedAt: now),
             state: busyState
         )
         expect(droppedLarge.outcome == .drop, "large actions should drop when the timeline is busy")
 
         let hoverInterrupt = timeline.decide(
-            request: PetActionRequest(animation: .cursorLook, sourceStatus: .waiting, submittedAt: now),
+            request: PetActionRequest(animation: .cursorLook, sourcePresentationState: .waitingAttentive, submittedAt: now),
             state: busyState
         )
         expect(hoverInterrupt.outcome == .playNow, "interaction actions should interrupt ambient actions")
 
         let microBusyState = PetActionTimelineState(
-            currentStatus: .waiting,
+            currentPresentationState: .waitingAttentive,
             currentLayer: .micro,
             currentPriority: .p3,
             reservedUntil: now.addingTimeInterval(1.0),
@@ -165,13 +272,13 @@ struct StatusTestRunner {
             lastInteractionAt: now.addingTimeInterval(-30)
         )
         let smallInterruptsMicro = timeline.decide(
-            request: PetActionRequest(animation: .waving, sourceStatus: .waiting, submittedAt: now),
+            request: PetActionRequest(animation: .waving, sourcePresentationState: .waitingAttentive, submittedAt: now),
             state: microBusyState
         )
         expect(smallInterruptsMicro.outcome == .playNow, "larger visible actions should interrupt micro actions")
 
         let draggingState = PetActionTimelineState(
-            currentStatus: .waiting,
+            currentPresentationState: .waitingAttentive,
             currentLayer: nil,
             currentPriority: nil,
             reservedUntil: nil,
@@ -181,15 +288,15 @@ struct StatusTestRunner {
             lastInteractionAt: now
         )
         let blockedDuringDrag = timeline.decide(
-            request: PetActionRequest(animation: .blink, sourceStatus: .waiting, submittedAt: now),
+            request: PetActionRequest(animation: .blink, sourcePresentationState: .waitingAttentive, submittedAt: now),
             state: draggingState
         )
         expect(blockedDuringDrag.outcome == .drop, "drag should suppress non-P0 actions")
 
         let staleStatus = timeline.decide(
-            request: PetActionRequest(animation: .waving, sourceStatus: .waiting, submittedAt: now),
+            request: PetActionRequest(animation: .waving, sourcePresentationState: .waitingAttentive, submittedAt: now),
             state: PetActionTimelineState(
-                currentStatus: .working,
+                currentPresentationState: .reviewFocused,
                 currentLayer: nil,
                 currentPriority: nil,
                 reservedUntil: nil,

@@ -14,6 +14,11 @@
 ## 开发计划
 
 - [动作体系实现计划](plans/action-system-implementation.md)：跟踪完整动作体系的阶段、验收标准、实现约束和会话进度。
+- [Codex 状态机联动实现计划](plans/codex-state-machine-implementation.md)：跟踪 Codex 元数据阶段、宠物展示状态和动作流转改造。
+
+## Backlog
+
+- [Backlog 索引](backlog/INDEX.md)：记录暂不进入当前实现范围、但后续有价值的需求。
 
 ## 决策记录
 

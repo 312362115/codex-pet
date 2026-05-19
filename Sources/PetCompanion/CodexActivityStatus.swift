@@ -6,6 +6,163 @@ public enum CodexActivityStatus: Hashable, Sendable {
     case waiting
 }
 
+public enum CodexWorkPhase: String, Hashable, Sendable {
+    case offline
+    case idle
+    case thinking
+    case runningTool
+    case waitingUser
+    case blocked
+    case completed
+    case longWorking
+
+    public var presentationState: PetPresentationState {
+        switch self {
+        case .offline:
+            return .offlineRest
+        case .idle:
+            return .idleRelaxed
+        case .thinking:
+            return .reviewFocused
+        case .runningTool:
+            return .toolRunning
+        case .waitingUser:
+            return .waitingAttentive
+        case .blocked:
+            return .blockedConcerned
+        case .completed:
+            return .completedCalm
+        case .longWorking:
+            return .longWorkTired
+        }
+    }
+}
+
+public enum PetPresentationState: String, Hashable, Sendable {
+    case offlineRest
+    case idleRelaxed
+    case reviewFocused
+    case toolRunning
+    case waitingAttentive
+    case blockedConcerned
+    case completedCalm
+    case longWorkTired
+
+    public var coarseStatus: CodexActivityStatus {
+        switch self {
+        case .offlineRest:
+            return .offline
+        case .idleRelaxed, .waitingAttentive, .completedCalm:
+            return .waiting
+        case .reviewFocused, .toolRunning, .blockedConcerned, .longWorkTired:
+            return .working
+        }
+    }
+
+    public var statusText: String {
+        switch self {
+        case .offlineRest:
+            return "Codex 离线"
+        case .idleRelaxed:
+            return "Codex 待命"
+        case .reviewFocused:
+            return "正在思考"
+        case .toolRunning:
+            return "运行工具中"
+        case .waitingAttentive:
+            return "等待你确认"
+        case .blockedConcerned:
+            return "遇到错误"
+        case .completedCalm:
+            return "这轮完成"
+        case .longWorkTired:
+            return "连续工作中"
+        }
+    }
+}
+
+public extension CodexActivityStatus {
+    var defaultPresentationState: PetPresentationState {
+        switch self {
+        case .offline:
+            return .offlineRest
+        case .working:
+            return .reviewFocused
+        case .waiting:
+            return .waitingAttentive
+        }
+    }
+}
+
+public struct PetPresentationTransitionPolicy: Sendable {
+    public init() {}
+
+    public func canSwitch(
+        from currentState: PetPresentationState,
+        currentStateSince: Date,
+        to candidateState: PetPresentationState,
+        candidateStateSince: Date,
+        now: Date
+    ) -> Bool {
+        if candidateState == currentState {
+            return true
+        }
+
+        if isUrgent(candidateState) {
+            return true
+        }
+
+        let currentDwell = now.timeIntervalSince(currentStateSince)
+        guard currentDwell >= minimumDwellDuration(for: currentState) else {
+            return false
+        }
+
+        let candidateDwell = now.timeIntervalSince(candidateStateSince)
+        return candidateDwell >= confirmationDelay(from: currentState, to: candidateState)
+    }
+
+    public func minimumDwellDuration(for state: PetPresentationState) -> TimeInterval {
+        switch state {
+        case .offlineRest:
+            return 2
+        case .idleRelaxed:
+            return 8
+        case .reviewFocused:
+            return 10
+        case .toolRunning:
+            return 10
+        case .waitingAttentive:
+            return 8
+        case .blockedConcerned:
+            return 8
+        case .completedCalm:
+            return 6
+        case .longWorkTired:
+            return 20
+        }
+    }
+
+    public func confirmationDelay(
+        from currentState: PetPresentationState,
+        to candidateState: PetPresentationState
+    ) -> TimeInterval {
+        switch candidateState {
+        case .offlineRest, .blockedConcerned, .longWorkTired:
+            return 0
+        case .completedCalm:
+            return 1.5
+        case .reviewFocused, .toolRunning:
+            return currentState == .idleRelaxed ? 1 : 2
+        case .waitingAttentive, .idleRelaxed:
+            return 5
+        }
+    }
+
+    private func isUrgent(_ state: PetPresentationState) -> Bool {
+        state == .offlineRest || state == .blockedConcerned
+    }
+}
+
 public enum PetAnimation: String, Hashable, Sendable {
     case idle
     case running
@@ -190,7 +347,7 @@ public struct PetActionCatalog: Sendable {
 
 public struct PetActionRequest: Equatable, Sendable {
     public let animation: PetAnimation
-    public let sourceStatus: CodexActivityStatus
+    public let sourcePresentationState: PetPresentationState
     public let submittedAt: Date
     public let layer: PetActionLayer
     public let priority: PetActionPriority
@@ -198,13 +355,13 @@ public struct PetActionRequest: Equatable, Sendable {
 
     public init(
         animation: PetAnimation,
-        sourceStatus: CodexActivityStatus,
+        sourcePresentationState: PetPresentationState,
         submittedAt: Date,
         catalog: PetActionCatalog = PetActionCatalog()
     ) {
         let descriptor = catalog.descriptor(for: animation)
         self.animation = animation
-        self.sourceStatus = sourceStatus
+        self.sourcePresentationState = sourcePresentationState
         self.submittedAt = submittedAt
         self.layer = descriptor?.layer ?? .small
         self.priority = descriptor?.priority ?? .p2
@@ -213,7 +370,7 @@ public struct PetActionRequest: Equatable, Sendable {
 }
 
 public struct PetActionTimelineState: Equatable, Sendable {
-    public let currentStatus: CodexActivityStatus
+    public let currentPresentationState: PetPresentationState
     public let currentLayer: PetActionLayer?
     public let currentPriority: PetActionPriority?
     public let reservedUntil: Date?
@@ -223,7 +380,7 @@ public struct PetActionTimelineState: Equatable, Sendable {
     public let lastInteractionAt: Date?
 
     public init(
-        currentStatus: CodexActivityStatus,
+        currentPresentationState: PetPresentationState,
         currentLayer: PetActionLayer?,
         currentPriority: PetActionPriority?,
         reservedUntil: Date?,
@@ -232,7 +389,7 @@ public struct PetActionTimelineState: Equatable, Sendable {
         lastStatusChangeAt: Date?,
         lastInteractionAt: Date?
     ) {
-        self.currentStatus = currentStatus
+        self.currentPresentationState = currentPresentationState
         self.currentLayer = currentLayer
         self.currentPriority = currentPriority
         self.reservedUntil = reservedUntil
@@ -261,7 +418,7 @@ public struct PetActionTimeline: Sendable {
             return PetActionDecision(outcome: .drop, animation: request.animation)
         }
 
-        if request.sourceStatus != state.currentStatus && request.priority.rawValue > PetActionPriority.p1.rawValue {
+        if request.sourcePresentationState != state.currentPresentationState && request.priority.rawValue > PetActionPriority.p1.rawValue {
             return PetActionDecision(outcome: .drop, animation: request.animation)
         }
 
@@ -353,6 +510,110 @@ public struct CodexActivityClassifier {
         }
 
         return .waiting
+    }
+}
+
+public struct CodexMetadataSnapshot: Equatable, Sendable {
+    public let codexIsRunning: Bool
+    public let latestActivityDate: Date?
+    public let activeThreadUpdatedAt: Date?
+    public let hasRecentUserEvent: Bool
+    public let hasRunningJob: Bool
+    public let hasPendingJob: Bool
+    public let hasRecentToolEvent: Bool
+    public let hasRecentFailedJob: Bool
+    public let hasRecentCompletedJob: Bool
+    public let hasActiveGoal: Bool
+    public let hasRecentCompletedGoal: Bool
+    public let hasRecentError: Bool
+    public let continuousActiveDuration: TimeInterval?
+    public let now: Date
+    public let activeThreshold: TimeInterval
+    public let waitingThreshold: TimeInterval
+    public let longWorkingThreshold: TimeInterval
+
+    public init(
+        codexIsRunning: Bool,
+        latestActivityDate: Date?,
+        activeThreadUpdatedAt: Date? = nil,
+        hasRecentUserEvent: Bool = false,
+        hasRunningJob: Bool = false,
+        hasPendingJob: Bool = false,
+        hasRecentToolEvent: Bool = false,
+        hasRecentFailedJob: Bool = false,
+        hasRecentCompletedJob: Bool = false,
+        hasActiveGoal: Bool = false,
+        hasRecentCompletedGoal: Bool = false,
+        hasRecentError: Bool = false,
+        continuousActiveDuration: TimeInterval? = nil,
+        now: Date,
+        activeThreshold: TimeInterval = 8,
+        waitingThreshold: TimeInterval = 90,
+        longWorkingThreshold: TimeInterval = 50 * 60
+    ) {
+        self.codexIsRunning = codexIsRunning
+        self.latestActivityDate = latestActivityDate
+        self.activeThreadUpdatedAt = activeThreadUpdatedAt
+        self.hasRecentUserEvent = hasRecentUserEvent
+        self.hasRunningJob = hasRunningJob
+        self.hasPendingJob = hasPendingJob
+        self.hasRecentToolEvent = hasRecentToolEvent
+        self.hasRecentFailedJob = hasRecentFailedJob
+        self.hasRecentCompletedJob = hasRecentCompletedJob
+        self.hasActiveGoal = hasActiveGoal
+        self.hasRecentCompletedGoal = hasRecentCompletedGoal
+        self.hasRecentError = hasRecentError
+        self.continuousActiveDuration = continuousActiveDuration
+        self.now = now
+        self.activeThreshold = activeThreshold
+        self.waitingThreshold = waitingThreshold
+        self.longWorkingThreshold = longWorkingThreshold
+    }
+}
+
+public struct CodexWorkPhaseClassifier: Sendable {
+    public init() {}
+
+    public func classify(_ snapshot: CodexMetadataSnapshot) -> CodexWorkPhase {
+        guard snapshot.codexIsRunning else {
+            return .offline
+        }
+
+        if snapshot.hasRecentError || snapshot.hasRecentFailedJob {
+            return .blocked
+        }
+
+        if let continuousActiveDuration = snapshot.continuousActiveDuration,
+           continuousActiveDuration >= snapshot.longWorkingThreshold {
+            return .longWorking
+        }
+
+        if snapshot.hasRunningJob || snapshot.hasPendingJob || snapshot.hasRecentToolEvent {
+            return .runningTool
+        }
+
+        if snapshot.hasRecentCompletedJob || snapshot.hasRecentCompletedGoal {
+            return .completed
+        }
+
+        let latestUserVisibleActivity = [
+            snapshot.activeThreadUpdatedAt,
+            snapshot.latestActivityDate
+        ].compactMap { $0 }.max()
+        guard let latestUserVisibleActivity else {
+            return snapshot.hasActiveGoal ? .thinking : .idle
+        }
+
+        let activityAge = snapshot.now.timeIntervalSince(latestUserVisibleActivity)
+        if activityAge <= snapshot.activeThreshold {
+            return .thinking
+        }
+
+        if activityAge <= snapshot.waitingThreshold || snapshot.hasRecentUserEvent {
+            return .waitingUser
+        }
+
+        return snapshot.hasActiveGoal ? .thinking : .idle
     }
 }
 
@@ -472,15 +733,53 @@ public struct PetMotionPolicy {
 public struct PetAmbientActionPolicy {
     public init() {}
 
-    public func restingAnimation(for status: CodexActivityStatus) -> PetAnimation {
-        switch status {
-        case .offline:
+    public func restingAnimation(for presentationState: PetPresentationState) -> PetAnimation {
+        switch presentationState {
+        case .offlineRest:
             return .failed
-        case .working:
-            return .review
-        case .waiting:
+        case .idleRelaxed:
             return .waiting
+        case .reviewFocused:
+            return .review
+        case .toolRunning:
+            return .tapKeyboard
+        case .waitingAttentive:
+            return .waiting
+        case .blockedConcerned:
+            return .failed
+        case .completedCalm:
+            return .nod
+        case .longWorkTired:
+            return .stretchWrist
         }
+    }
+
+    public func restingFrameIndex(for presentationState: PetPresentationState, frameCount: Int) -> Int {
+        let safeFrameCount = max(1, frameCount)
+        let progress: Double
+        switch presentationState {
+        case .offlineRest:
+            progress = 0.55
+        case .idleRelaxed:
+            progress = 0.25
+        case .reviewFocused:
+            progress = 0.40
+        case .toolRunning:
+            progress = 0.55
+        case .waitingAttentive:
+            progress = 0.10
+        case .blockedConcerned:
+            progress = 0.70
+        case .completedCalm:
+            progress = 0.65
+        case .longWorkTired:
+            progress = 0.55
+        }
+        return min(safeFrameCount - 1, max(0, Int(Double(safeFrameCount - 1) * progress)))
+    }
+
+    public func restingAnimation(for status: CodexActivityStatus) -> PetAnimation {
+        restingAnimation(for: status.defaultPresentationState)
     }
 
     public func ambientAnimations(for status: CodexActivityStatus) -> [PetAnimation] {
@@ -491,56 +790,103 @@ public struct PetAmbientActionPolicy {
         smallActionSuites(for: status)
     }
 
-    public func microActionSuites(for status: CodexActivityStatus) -> [[PetAnimation]] {
-        switch status {
-        case .offline:
+    public func microActionSuites(for presentationState: PetPresentationState) -> [[PetAnimation]] {
+        switch presentationState {
+        case .offlineRest:
             return []
-        case .working:
+        case .idleRelaxed:
+            return [[.breathing], [.weightShift], [.shoulderRelax], [.hairSway]]
+        case .waitingAttentive:
             return [[.breathing], [.tinyHandAdjust], [.hairSway]]
-        case .waiting:
-            return [[.breathing], [.weightShift], [.shoulderRelax], [.tinyHandAdjust], [.hairSway]]
+        case .reviewFocused:
+            return [[.breathing], [.tinyHandAdjust], [.hairSway]]
+        case .toolRunning:
+            return [[.tinyHandAdjust], [.hairSway]]
+        case .blockedConcerned:
+            return [[.shoulderRelax]]
+        case .completedCalm:
+            return [[.breathing], [.shoulderRelax]]
+        case .longWorkTired:
+            return [[.shoulderRelax], [.tinyHandAdjust]]
+        }
+    }
+
+    public func microActionSuites(for status: CodexActivityStatus) -> [[PetAnimation]] {
+        microActionSuites(for: status.defaultPresentationState)
+    }
+
+    public func smallActionSuites(for presentationState: PetPresentationState) -> [[PetAnimation]] {
+        switch presentationState {
+        case .offlineRest:
+            return []
+        case .idleRelaxed:
+            return [[.waving]]
+        case .waitingAttentive:
+            return [[.cursorLook], [.waving], [.hoverSmile]]
+        case .reviewFocused:
+            return [[.adjustGlasses], [.thinking], [.nod], [.checkNotes]]
+        case .toolRunning:
+            return [[.tapKeyboard], [.checkNotes], [.focusShift]]
+        case .blockedConcerned:
+            return [[.glanceLeft], [.glanceRight], [.shoulderRelax]]
+        case .completedCalm:
+            return [[.nod], [.hoverSmile], [.shoulderRelax]]
+        case .longWorkTired:
+            return [[.stretchWrist], [.shoulderRelax], [.fixPosture]]
         }
     }
 
     public func smallActionSuites(for status: CodexActivityStatus) -> [[PetAnimation]] {
-        switch status {
-        case .offline:
+        smallActionSuites(for: status.defaultPresentationState)
+    }
+
+    public func largeActionSuites(for presentationState: PetPresentationState) -> [[PetAnimation]] {
+        switch presentationState {
+        case .offlineRest:
             return []
-        case .working:
-            return [
-                [.adjustGlasses],
-                [.thinking],
-                [.nod],
-                [.tapKeyboard],
-                [.checkNotes],
-                [.stretchWrist]
-            ]
-        case .waiting:
-            return [
-                [.waving]
-            ]
+        case .idleRelaxed:
+            return [[.lookAround], [.postureReset], [.stretch], [.stepAside]]
+        case .waitingAttentive:
+            return [[.glanceLeft], [.glanceRight], [.adjustOutfit], [.lookAround]]
+        case .reviewFocused:
+            return [[.glanceLeft], [.glanceRight], [.focusShift], [.fixPosture], [.postureReset]]
+        case .toolRunning:
+            return [[.focusShift], [.fixPosture]]
+        case .blockedConcerned:
+            return [[.glanceLeft], [.glanceRight]]
+        case .completedCalm:
+            return [[.shoulderRelax], [.postureReset]]
+        case .longWorkTired:
+            return [[.stretch], [.postureReset]]
         }
     }
 
     public func largeActionSuites(for status: CodexActivityStatus) -> [[PetAnimation]] {
-        switch status {
-        case .offline:
-            return []
-        case .working:
-            return [[.glanceLeft], [.glanceRight], [.focusShift], [.fixPosture], [.postureReset], [.stretch]]
-        case .waiting:
-            return [[.glanceLeft], [.glanceRight], [.adjustOutfit], [.lookAround], [.postureReset], [.stretch], [.stepAside]]
+        largeActionSuites(for: status.defaultPresentationState)
+    }
+
+    public func hoverActionSuites(for presentationState: PetPresentationState) -> [[PetAnimation]] {
+        switch presentationState {
+        case .offlineRest:
+            return [[.failed]]
+        case .idleRelaxed:
+            return [[.wakeUp], [.waving], [.lookAround]]
+        case .waitingAttentive:
+            return [[.cursorLook, .hoverSmile], [.waving]]
+        case .reviewFocused:
+            return [[.focusTighten], [.adjustGlasses], [.thinking]]
+        case .toolRunning:
+            return [[.tapKeyboard], [.focusShift], [.checkNotes]]
+        case .blockedConcerned:
+            return [[.tiredSoften], [.glanceLeft, .glanceRight]]
+        case .completedCalm:
+            return [[.hoverSmile], [.nod], [.shoulderRelax]]
+        case .longWorkTired:
+            return [[.stretchWrist], [.shoulderRelax], [.fixPosture]]
         }
     }
 
     public func hoverActionSuites(for status: CodexActivityStatus) -> [[PetAnimation]] {
-        switch status {
-        case .offline:
-            return [[.failed]]
-        case .working:
-            return [[.cursorLook], [.focusShift], [.nod]]
-        case .waiting:
-            return [[.cursorLook], [.waving]]
-        }
+        hoverActionSuites(for: status.defaultPresentationState)
     }
 }

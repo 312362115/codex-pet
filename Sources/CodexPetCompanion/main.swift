@@ -52,12 +52,109 @@ private struct CompanionConfig {
 private final class CodexActivityReader {
     private let config: CompanionConfig
     private let classifier = CodexActivityClassifier()
+    private let phaseClassifier = CodexWorkPhaseClassifier()
+    private let presentationTransitionPolicy = PetPresentationTransitionPolicy()
+    private let metadataReader: CodexMetadataReader
+    private var activeWorkStartedAt: Date?
+    private var resolvedPresentationState: PetPresentationState?
+    private var resolvedPresentationStateChangedAt: Date?
+    private var candidatePresentationState: PetPresentationState?
+    private var candidatePresentationStateFirstSeenAt: Date?
 
     init(config: CompanionConfig) {
         self.config = config
+        self.metadataReader = CodexMetadataReader(config: config)
     }
 
     func currentStatus() -> CodexActivityStatus {
+        currentPresentationState().coarseStatus
+    }
+
+    func currentPresentationState() -> PetPresentationState {
+        let now = Date()
+        let codexIsRunning = codexIsRunning()
+        let latestActivityDate = latestActivityDate()
+
+        updateActiveWorkStart(
+            codexIsRunning: codexIsRunning,
+            latestActivityDate: latestActivityDate,
+            now: now
+        )
+
+        let snapshot = metadataReader.currentSnapshot(
+            codexIsRunning: codexIsRunning,
+            latestActivityDate: latestActivityDate,
+            continuousActiveDuration: activeWorkStartedAt.map { now.timeIntervalSince($0) },
+            now: now
+        )
+        let phase = phaseClassifier.classify(snapshot)
+        if phase == .offline || phase == .idle || phase == .completed {
+            activeWorkStartedAt = nil
+        }
+        return resolvePresentationState(phase.presentationState, now: now)
+    }
+
+    private func resolvePresentationState(
+        _ candidateState: PetPresentationState,
+        now: Date
+    ) -> PetPresentationState {
+        guard let currentState = resolvedPresentationState else {
+            resolvedPresentationState = candidateState
+            resolvedPresentationStateChangedAt = now
+            return candidateState
+        }
+
+        if candidateState == currentState {
+            candidatePresentationState = nil
+            candidatePresentationStateFirstSeenAt = nil
+            return currentState
+        }
+
+        if candidatePresentationState != candidateState {
+            candidatePresentationState = candidateState
+            candidatePresentationStateFirstSeenAt = now
+        }
+
+        let currentStateSince = resolvedPresentationStateChangedAt ?? now
+        let candidateStateSince = candidatePresentationStateFirstSeenAt ?? now
+        guard presentationTransitionPolicy.canSwitch(
+            from: currentState,
+            currentStateSince: currentStateSince,
+            to: candidateState,
+            candidateStateSince: candidateStateSince,
+            now: now
+        ) else {
+            return currentState
+        }
+
+        resolvedPresentationState = candidateState
+        resolvedPresentationStateChangedAt = now
+        candidatePresentationState = nil
+        candidatePresentationStateFirstSeenAt = nil
+        return candidateState
+    }
+
+    private func updateActiveWorkStart(
+        codexIsRunning: Bool,
+        latestActivityDate: Date?,
+        now: Date
+    ) {
+        guard codexIsRunning, let latestActivityDate else {
+            activeWorkStartedAt = nil
+            return
+        }
+
+        let activityAge = now.timeIntervalSince(latestActivityDate)
+        if activityAge <= 8 {
+            if activeWorkStartedAt == nil {
+                activeWorkStartedAt = now
+            }
+        } else if activityAge > 90 {
+            activeWorkStartedAt = nil
+        }
+    }
+
+    func legacyStatus() -> CodexActivityStatus {
         let snapshot = CodexActivitySnapshot(
             codexIsRunning: codexIsRunning(),
             latestActivityDate: latestActivityDate(),
@@ -86,6 +183,191 @@ private final class CodexActivityReader {
             }
             return attributes[.modificationDate] as? Date
         }.max()
+    }
+}
+
+private struct CodexMetadataReader {
+    private struct StateMetadata {
+        let activeThreadUpdatedAt: Date?
+        let hasRecentUserEvent: Bool
+        let hasRunningJob: Bool
+        let hasPendingJob: Bool
+        let hasRecentFailedJob: Bool
+        let hasRecentCompletedJob: Bool
+        let hasActiveGoal: Bool
+        let hasRecentCompletedGoal: Bool
+    }
+
+    private let config: CompanionConfig
+
+    init(config: CompanionConfig) {
+        self.config = config
+    }
+
+    func currentSnapshot(
+        codexIsRunning: Bool,
+        latestActivityDate: Date?,
+        continuousActiveDuration: TimeInterval?,
+        now: Date
+    ) -> CodexMetadataSnapshot {
+        let state = readStateMetadata(now: now)
+        return CodexMetadataSnapshot(
+            codexIsRunning: codexIsRunning,
+            latestActivityDate: latestActivityDate,
+            activeThreadUpdatedAt: state.activeThreadUpdatedAt,
+            hasRecentUserEvent: state.hasRecentUserEvent,
+            hasRunningJob: state.hasRunningJob,
+            hasPendingJob: state.hasPendingJob,
+            hasRecentToolEvent: hasRecentToolEvent(now: now),
+            hasRecentFailedJob: state.hasRecentFailedJob,
+            hasRecentCompletedJob: state.hasRecentCompletedJob,
+            hasActiveGoal: state.hasActiveGoal,
+            hasRecentCompletedGoal: state.hasRecentCompletedGoal,
+            hasRecentError: hasRecentError(now: now),
+            continuousActiveDuration: continuousActiveDuration,
+            now: now
+        )
+    }
+
+    private func readStateMetadata(now: Date) -> StateMetadata {
+        let path = "\(config.codexHome)/state_5.sqlite"
+        let nowSeconds = Int(now.timeIntervalSince1970)
+        let nowMilliseconds = Int(now.timeIntervalSince1970 * 1000)
+        let recentSeconds = nowSeconds - 180
+        let recentMilliseconds = nowMilliseconds - 180_000
+        let query = """
+        WITH latest_thread AS (
+          SELECT updated_at, updated_at_ms, has_user_event
+          FROM threads
+          WHERE archived = 0
+          ORDER BY COALESCE(updated_at_ms, updated_at * 1000) DESC
+          LIMIT 1
+        )
+        SELECT
+          COALESCE((SELECT COALESCE(updated_at_ms / 1000, updated_at) FROM latest_thread), 0),
+          COALESCE((SELECT has_user_event FROM latest_thread), 0),
+          (SELECT COUNT(*) FROM agent_jobs WHERE lower(status) IN ('running', 'in_progress', 'active', 'processing', 'started')),
+          (SELECT COUNT(*) FROM agent_job_items WHERE lower(status) IN ('running', 'in_progress', 'active', 'processing', 'started')),
+          (SELECT COUNT(*) FROM agent_jobs WHERE lower(status) IN ('pending', 'queued')),
+          (SELECT COUNT(*) FROM agent_job_items WHERE lower(status) IN ('pending', 'queued')),
+          (SELECT COUNT(*) FROM agent_jobs WHERE lower(status) IN ('failed', 'error') AND COALESCE(completed_at, updated_at, started_at, created_at, 0) >= \(recentSeconds)),
+          (SELECT COUNT(*) FROM agent_job_items WHERE lower(status) IN ('failed', 'error') AND COALESCE(completed_at, updated_at, created_at, 0) >= \(recentSeconds)),
+          (SELECT COUNT(*) FROM agent_jobs WHERE lower(status) IN ('completed', 'complete', 'done', 'success', 'succeeded') AND COALESCE(completed_at, updated_at, started_at, created_at, 0) >= \(recentSeconds)),
+          (SELECT COUNT(*) FROM agent_job_items WHERE lower(status) IN ('completed', 'complete', 'done', 'success', 'succeeded') AND COALESCE(completed_at, updated_at, created_at, 0) >= \(recentSeconds)),
+          (SELECT COUNT(*) FROM thread_goals WHERE lower(status) IN ('active', 'paused', 'budget_limited')),
+          (SELECT COUNT(*) FROM thread_goals WHERE lower(status) = 'complete' AND updated_at_ms >= \(recentMilliseconds));
+        """
+
+        guard let output = runSQLite(databasePath: path, query: query),
+              let row = output.split(separator: "\n").first else {
+            return StateMetadata(
+                activeThreadUpdatedAt: nil,
+                hasRecentUserEvent: false,
+                hasRunningJob: false,
+                hasPendingJob: false,
+                hasRecentFailedJob: false,
+                hasRecentCompletedJob: false,
+                hasActiveGoal: false,
+                hasRecentCompletedGoal: false
+            )
+        }
+
+        let fields = row.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+        func intValue(_ index: Int) -> Int {
+            guard fields.indices.contains(index) else {
+                return 0
+            }
+            return Int(fields[index]) ?? 0
+        }
+
+        let threadUpdatedAt = intValue(0) > 0
+            ? Date(timeIntervalSince1970: TimeInterval(intValue(0)))
+            : nil
+        return StateMetadata(
+            activeThreadUpdatedAt: threadUpdatedAt,
+            hasRecentUserEvent: intValue(1) > 0,
+            hasRunningJob: intValue(2) + intValue(3) > 0,
+            hasPendingJob: intValue(4) + intValue(5) > 0,
+            hasRecentFailedJob: intValue(6) + intValue(7) > 0,
+            hasRecentCompletedJob: intValue(8) + intValue(9) > 0,
+            hasActiveGoal: intValue(10) > 0,
+            hasRecentCompletedGoal: intValue(11) > 0
+        )
+    }
+
+    private func hasRecentError(now: Date) -> Bool {
+        let path = "\(config.codexHome)/logs_2.sqlite"
+        let recentSeconds = Int(now.timeIntervalSince1970) - 180
+        let query = """
+        SELECT COUNT(*)
+        FROM logs
+        WHERE upper(level) = 'ERROR'
+          AND ts >= \(recentSeconds);
+        """
+        guard let output = runSQLite(databasePath: path, query: query),
+              let count = Int(output.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            return false
+        }
+        return count > 0
+    }
+
+    private func hasRecentToolEvent(now: Date) -> Bool {
+        let path = "\(config.codexHome)/logs_2.sqlite"
+        let recentSeconds = Int(now.timeIntervalSince1970) - 8
+        let query = """
+        SELECT COUNT(*)
+        FROM logs
+        WHERE ts >= \(recentSeconds)
+          AND (
+            lower(target) = 'rmcp::service'
+            OR lower(target) = 'codex_core::shell_snapshot'
+            OR lower(target) = 'codex_core::exec_policy'
+            OR lower(target) LIKE 'codex_mcp::%'
+            OR lower(target) LIKE 'codex_rmcp_client::%'
+          )
+          AND lower(target) NOT LIKE '%registry%';
+        """
+        guard let output = runSQLite(databasePath: path, query: query),
+              let count = Int(output.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            return false
+        }
+        return count > 0
+    }
+
+    private func runSQLite(databasePath: String, query: String) -> String? {
+        guard FileManager.default.fileExists(atPath: databasePath) else {
+            return nil
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
+        process.arguments = [
+            "-readonly",
+            "-batch",
+            "-noheader",
+            "-separator",
+            "\t",
+            databasePath,
+            query
+        ]
+
+        let outputPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+
+        guard process.terminationStatus == 0 else {
+            return nil
+        }
+
+        let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .newlines)
     }
 }
 
@@ -262,7 +544,7 @@ private final class PetWindow: NSWindow {
 private final class PetView: NSView {
     private let frameProvider: PetFrameProvider
     private let config: CompanionConfig
-    private var status: CodexActivityStatus = .waiting
+    private var presentationState: PetPresentationState = .waitingAttentive
     private var animation = PetAnimation.waiting
     private var frameIndex = 0
     private let motionPolicy = PetMotionPolicy()
@@ -287,12 +569,18 @@ private final class PetView: NSView {
         nil
     }
 
-    func settle(status: CodexActivityStatus) {
-        let restingAnimation = ambientPolicy.restingAnimation(for: status)
-        if self.status != status || self.animation != restingAnimation {
-            self.status = status
+    func settle(presentationState: PetPresentationState) {
+        let restingAnimation = ambientPolicy.restingAnimation(for: presentationState)
+        let restingFrameIndex = ambientPolicy.restingFrameIndex(
+            for: presentationState,
+            frameCount: frameProvider.frameCount(for: restingAnimation)
+        )
+        if self.presentationState != presentationState
+            || self.animation != restingAnimation
+            || self.frameIndex != restingFrameIndex {
+            self.presentationState = presentationState
             self.animation = restingAnimation
-            self.frameIndex = 0
+            self.frameIndex = restingFrameIndex
             needsDisplay = true
         }
     }
@@ -389,15 +677,24 @@ private final class PetView: NSView {
     private func drawStatusPill() {
         let text: String
         let fillColor: NSColor
-        switch status {
-        case .offline:
-            text = "Codex 离线"
+        switch presentationState {
+        case .offlineRest:
+            text = presentationState.statusText
             fillColor = NSColor(calibratedRed: 0.42, green: 0.42, blue: 0.45, alpha: 0.72)
-        case .working:
-            text = "Codex 工作中"
+        case .reviewFocused, .toolRunning:
+            text = presentationState.statusText
             fillColor = NSColor(calibratedRed: 0.09, green: 0.42, blue: 0.33, alpha: 0.78)
-        case .waiting:
-            text = "等待输入"
+        case .blockedConcerned:
+            text = presentationState.statusText
+            fillColor = NSColor(calibratedRed: 0.55, green: 0.18, blue: 0.18, alpha: 0.78)
+        case .completedCalm:
+            text = presentationState.statusText
+            fillColor = NSColor(calibratedRed: 0.22, green: 0.38, blue: 0.22, alpha: 0.78)
+        case .longWorkTired:
+            text = presentationState.statusText
+            fillColor = NSColor(calibratedRed: 0.46, green: 0.34, blue: 0.18, alpha: 0.78)
+        case .idleRelaxed, .waitingAttentive:
+            text = presentationState.statusText
             fillColor = NSColor(calibratedRed: 0.20, green: 0.25, blue: 0.34, alpha: 0.76)
         }
 
@@ -444,7 +741,7 @@ private final class PetView: NSView {
     }
 }
 
-private enum PetSchedulerKind {
+private enum PetSchedulerKind: String {
     case micro
     case small
     case large
@@ -461,7 +758,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var smallActionTimer: Timer?
     private var largeActionTimer: Timer?
     private var animationTimer: Timer?
-    private var currentStatus = CodexActivityStatus.waiting
+    private var currentPresentationState = PetPresentationState.waitingAttentive
     private var isDragging = false
     private var isHovering = false
     private var actionSuite: [PetAnimation] = []
@@ -473,14 +770,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastStatusChangeAt = Date()
     private var lastInteractionAt = Date.distantPast
     private var queuedSmallAction: [PetAnimation]?
-    private var workingSuiteCursor = 0
-    private var waitingSuiteCursor = 0
-    private var offlineSuiteCursor = 0
-    private var workingMicroSuiteCursor = 0
-    private var waitingMicroSuiteCursor = 0
-    private var workingLargeSuiteCursor = 0
-    private var waitingLargeSuiteCursor = 0
-    private var hoverSuiteCursor = 0
+    private var hoverOwnsCurrentInteraction = false
+    private var suiteCursors: [String: Int] = [:]
     private let ambientPolicy = PetAmbientActionPolicy()
     private let actionCatalog = PetActionCatalog()
     private let actionTimeline = PetActionTimeline()
@@ -527,10 +818,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             self.window = window
 
             pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-                self?.pollStatus()
+                self?.pollPresentationState()
             }
 
-            pollStatus()
+            pollPresentationState()
             scheduleAllSchedulers(initialDelay: true)
         } catch {
             presentStartupError(error)
@@ -546,30 +837,30 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
-    private func pollStatus() {
-        guard let status = activityReader?.currentStatus() else {
-            handleStatus(.offline)
+    private func pollPresentationState() {
+        guard let presentationState = activityReader?.currentPresentationState() else {
+            handlePresentationState(.offlineRest)
             return
         }
-        handleStatus(status)
+        handlePresentationState(presentationState)
     }
 
-    private func handleStatus(_ status: CodexActivityStatus) {
-        guard status != currentStatus else {
+    private func handlePresentationState(_ presentationState: PetPresentationState) {
+        guard presentationState != currentPresentationState else {
             return
         }
 
-        let previousStatus = currentStatus
-        currentStatus = status
+        let previousPresentationState = currentPresentationState
+        currentPresentationState = presentationState
         lastStatusChangeAt = Date()
         stopScheduledAndActiveActions()
         if !isDragging {
-            petView?.settle(status: status)
-            let transition = statusTransitionSuite(from: previousStatus, to: status)
+            petView?.settle(presentationState: presentationState)
+            let transition = presentationTransitionSuite(from: previousPresentationState, to: presentationState)
             if transition.isEmpty {
                 scheduleAllSchedulers(initialDelay: true)
             } else {
-                requestActionSuite(transition, kind: .interaction, sourceStatus: status)
+                requestActionSuite(transition, kind: .interaction, sourcePresentationState: presentationState)
             }
         }
     }
@@ -582,7 +873,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func scheduleMicroAction(initialDelay: Bool = false) {
         microActionTimer?.invalidate()
-        guard !isDragging else {
+        guard !isDragging, !isHovering else {
             return
         }
 
@@ -594,7 +885,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func scheduleSmallAction(initialDelay: Bool = false) {
         smallActionTimer?.invalidate()
-        guard !isDragging else {
+        guard !isDragging, !isHovering else {
             return
         }
 
@@ -617,7 +908,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func requestNextAction(kind: PetSchedulerKind) {
-        guard !isDragging, petView != nil else {
+        guard !isDragging, !isHovering, petView != nil else {
             scheduleAction(kind: kind)
             return
         }
@@ -628,10 +919,14 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        requestActionSuite(suite, kind: kind, sourceStatus: currentStatus)
+        requestActionSuite(suite, kind: kind, sourcePresentationState: currentPresentationState)
     }
 
-    private func requestActionSuite(_ suite: [PetAnimation], kind: PetSchedulerKind, sourceStatus: CodexActivityStatus) {
+    private func requestActionSuite(
+        _ suite: [PetAnimation],
+        kind: PetSchedulerKind,
+        sourcePresentationState: PetPresentationState
+    ) {
         guard !suite.isEmpty else {
             scheduleAction(kind: kind)
             return
@@ -644,9 +939,14 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let primaryAnimation = primaryAnimation(in: suite) ?? suite[0]
-        let request = PetActionRequest(animation: primaryAnimation, sourceStatus: sourceStatus, submittedAt: Date(), catalog: actionCatalog)
+        let request = PetActionRequest(
+            animation: primaryAnimation,
+            sourcePresentationState: sourcePresentationState,
+            submittedAt: Date(),
+            catalog: actionCatalog
+        )
         let state = PetActionTimelineState(
-            currentStatus: currentStatus,
+            currentPresentationState: currentPresentationState,
             currentLayer: activeActionLayer,
             currentPriority: activeActionPriority,
             reservedUntil: activeActionReservedUntil,
@@ -720,11 +1020,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         activeActionLayer = nil
         activeActionPriority = nil
         activeActionReservedUntil = nil
-        petView?.settle(status: currentStatus)
+        petView?.settle(presentationState: currentPresentationState)
 
         if let queuedSmallAction, !isDragging, !isHovering {
             self.queuedSmallAction = nil
-            requestActionSuite(queuedSmallAction, kind: .small, sourceStatus: currentStatus)
+            requestActionSuite(queuedSmallAction, kind: .small, sourcePresentationState: currentPresentationState)
             return
         }
 
@@ -745,11 +1045,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private func nextSuite(kind: PetSchedulerKind) -> [PetAnimation] {
         switch kind {
         case .micro:
-            return nextActionSuite(from: ambientPolicy.microActionSuites(for: currentStatus), kind: kind)
+            return nextActionSuite(from: ambientPolicy.microActionSuites(for: currentPresentationState), kind: kind)
         case .small:
-            return nextActionSuite(from: ambientPolicy.smallActionSuites(for: currentStatus), kind: kind)
+            return nextActionSuite(from: ambientPolicy.smallActionSuites(for: currentPresentationState), kind: kind)
         case .large:
-            return nextActionSuite(from: ambientPolicy.largeActionSuites(for: currentStatus), kind: kind)
+            return nextActionSuite(from: ambientPolicy.largeActionSuites(for: currentPresentationState), kind: kind)
         case .interaction:
             return hoverSuite()
         }
@@ -760,31 +1060,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             return []
         }
 
-        switch (currentStatus, kind) {
-        case (.working, .small):
-            defer { workingSuiteCursor += 1 }
-            return suites[workingSuiteCursor % suites.count]
-        case (.waiting, .small):
-            defer { waitingSuiteCursor += 1 }
-            return suites[waitingSuiteCursor % suites.count]
-        case (.offline, .small):
-            defer { offlineSuiteCursor += 1 }
-            return suites[offlineSuiteCursor % suites.count]
-        case (.working, .micro):
-            defer { workingMicroSuiteCursor += 1 }
-            return suites[workingMicroSuiteCursor % suites.count]
-        case (.waiting, .micro):
-            defer { waitingMicroSuiteCursor += 1 }
-            return suites[waitingMicroSuiteCursor % suites.count]
-        case (.working, .large):
-            defer { workingLargeSuiteCursor += 1 }
-            return suites[workingLargeSuiteCursor % suites.count]
-        case (.waiting, .large):
-            defer { waitingLargeSuiteCursor += 1 }
-            return suites[waitingLargeSuiteCursor % suites.count]
-        case (.offline, .large), (.offline, .micro), (_, .interaction):
-            return suites[0]
-        }
+        let cursorKey = "\(currentPresentationState.rawValue)-\(kind.rawValue)"
+        let cursor = suiteCursors[cursorKey, default: 0]
+        suiteCursors[cursorKey] = cursor + 1
+        return suites[cursor % suites.count]
     }
 
     private func scheduleAction(kind: PetSchedulerKind) {
@@ -816,6 +1095,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         activeActionPriority = nil
         activeActionReservedUntil = nil
         queuedSmallAction = nil
+        hoverOwnsCurrentInteraction = false
     }
 
     private func beginHovering() {
@@ -825,8 +1105,15 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
         isHovering = true
         lastInteractionAt = Date()
+        if let activeActionLayer, activeActionLayer != .micro {
+            largeActionTimer?.invalidate()
+            largeActionTimer = nil
+            return
+        }
+
         stopScheduledAndActiveActions()
-        requestActionSuite(hoverSuite(), kind: .interaction, sourceStatus: currentStatus)
+        hoverOwnsCurrentInteraction = true
+        requestActionSuite(hoverSuite(), kind: .interaction, sourcePresentationState: currentPresentationState)
     }
 
     private func endHovering() {
@@ -835,18 +1122,20 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !isDragging else {
             return
         }
-        stopScheduledAndActiveActions()
-        petView?.settle(status: currentStatus)
+        if hoverOwnsCurrentInteraction {
+            stopScheduledAndActiveActions()
+            petView?.settle(presentationState: currentPresentationState)
+        }
+        hoverOwnsCurrentInteraction = false
         scheduleAllSchedulers(initialDelay: true)
     }
 
     private func hoverSuite() -> [PetAnimation] {
-        let suites = ambientPolicy.hoverActionSuites(for: currentStatus)
+        let suites = ambientPolicy.hoverActionSuites(for: currentPresentationState)
         guard !suites.isEmpty else {
             return []
         }
-        defer { hoverSuiteCursor += 1 }
-        return suites[hoverSuiteCursor % suites.count]
+        return nextActionSuite(from: suites, kind: .interaction)
     }
 
     private func beginContextMenuAttention() {
@@ -856,7 +1145,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
         lastInteractionAt = Date()
         stopScheduledAndActiveActions()
-        requestActionSuite([.contextMenuAttend], kind: .interaction, sourceStatus: currentStatus)
+        requestActionSuite([.contextMenuAttend], kind: .interaction, sourcePresentationState: currentPresentationState)
     }
 
     private func beginDragging() {
@@ -868,23 +1157,34 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private func endDragging() {
         isDragging = false
         lastInteractionAt = Date()
-        requestActionSuite([.dragReleaseSettle], kind: .interaction, sourceStatus: currentStatus)
+        requestActionSuite([.dragReleaseSettle], kind: .interaction, sourcePresentationState: currentPresentationState)
     }
 
-    private func statusTransitionSuite(from previousStatus: CodexActivityStatus, to status: CodexActivityStatus) -> [PetAnimation] {
-        switch (previousStatus, status) {
-        case (_, .offline):
+    private func presentationTransitionSuite(
+        from previousState: PetPresentationState,
+        to state: PetPresentationState
+    ) -> [PetAnimation] {
+        switch (previousState, state) {
+        case (_, .offlineRest):
             return []
-        case (.offline, .waiting):
+        case (.offlineRest, .idleRelaxed), (.offlineRest, .waitingAttentive):
             return [.wakeUp]
-        case (.working, .waiting):
+        case (_, .idleRelaxed):
             return [.shoulderRelax]
-        case (.offline, .working):
+        case (.offlineRest, .reviewFocused), (.offlineRest, .toolRunning):
             return [.wakeUp, .adjustGlasses]
-        case (_, .working):
+        case (_, .reviewFocused):
             return [.adjustGlasses]
-        case (_, .waiting):
-            return [.wakeUp]
+        case (_, .toolRunning):
+            return [.tapKeyboard]
+        case (_, .waitingAttentive):
+            return [.cursorLook]
+        case (_, .blockedConcerned):
+            return [.tiredSoften]
+        case (_, .completedCalm):
+            return [.nod, .hoverSmile]
+        case (_, .longWorkTired):
+            return [.stretchWrist]
         }
     }
 
@@ -915,46 +1215,52 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func smallActionInterval(initialDelay: Bool) -> TimeInterval {
         if initialDelay {
-            return TimeInterval.random(in: 10.0...18.0)
+            return TimeInterval.random(in: 24.0...40.0)
         }
 
-        switch currentStatus {
-        case .offline:
+        switch currentPresentationState {
+        case .offlineRest:
             return TimeInterval.random(in: 60.0...120.0)
-        case .working:
-            return TimeInterval.random(in: 12.0...30.0)
-        case .waiting:
-            return TimeInterval.random(in: 10.0...25.0)
+        case .reviewFocused, .toolRunning:
+            return TimeInterval.random(in: 32.0...68.0)
+        case .blockedConcerned, .completedCalm, .longWorkTired:
+            return TimeInterval.random(in: 45.0...90.0)
+        case .idleRelaxed, .waitingAttentive:
+            return TimeInterval.random(in: 35.0...75.0)
         }
     }
 
     private func microActionInterval(initialDelay: Bool) -> TimeInterval {
         if initialDelay {
-            return TimeInterval.random(in: 4.0...8.0)
+            return TimeInterval.random(in: 10.0...18.0)
         }
 
-        switch currentStatus {
-        case .offline:
+        switch currentPresentationState {
+        case .offlineRest:
             return TimeInterval.random(in: 60.0...120.0)
-        case .working:
-            return TimeInterval.random(in: 6.0...14.0)
-        case .waiting:
-            return TimeInterval.random(in: 7.0...16.0)
+        case .reviewFocused, .toolRunning:
+            return TimeInterval.random(in: 14.0...30.0)
+        case .blockedConcerned, .completedCalm, .longWorkTired:
+            return TimeInterval.random(in: 24.0...48.0)
+        case .idleRelaxed, .waitingAttentive:
+            return TimeInterval.random(in: 18.0...36.0)
         }
     }
 
     private func largeActionInterval(initialDelay: Bool) -> TimeInterval {
         if initialDelay {
-            return TimeInterval.random(in: 70.0...120.0)
+            return TimeInterval.random(in: 140.0...220.0)
         }
 
-        switch currentStatus {
-        case .offline:
+        switch currentPresentationState {
+        case .offlineRest:
             return TimeInterval.random(in: 120.0...240.0)
-        case .working:
-            return TimeInterval.random(in: 120.0...210.0)
-        case .waiting:
-            return TimeInterval.random(in: 90.0...180.0)
+        case .reviewFocused, .toolRunning:
+            return TimeInterval.random(in: 220.0...360.0)
+        case .blockedConcerned, .completedCalm, .longWorkTired:
+            return TimeInterval.random(in: 260.0...420.0)
+        case .idleRelaxed, .waitingAttentive:
+            return TimeInterval.random(in: 200.0...340.0)
         }
     }
 

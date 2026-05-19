@@ -5,6 +5,8 @@ import Testing
 @Suite("Codex activity classification")
 struct CodexActivityStatusTests {
     private let classifier = CodexActivityClassifier()
+    private let phaseClassifier = CodexWorkPhaseClassifier()
+    private let transitionPolicy = PetPresentationTransitionPolicy()
     private let now = Date(timeIntervalSince1970: 1_000)
 
     @Test("Codex not running is offline")
@@ -57,6 +59,99 @@ struct CodexActivityStatusTests {
         #expect(mapper.animation(for: .waiting) == .waiting)
     }
 
+    @Test("Metadata maps to work phases and presentation states")
+    func metadataMapsToWorkPhasesAndPresentationStates() {
+        #expect(phaseClassifier.classify(CodexMetadataSnapshot(
+            codexIsRunning: false,
+            latestActivityDate: now,
+            now: now
+        )) == .offline)
+        #expect(phaseClassifier.classify(CodexMetadataSnapshot(
+            codexIsRunning: true,
+            latestActivityDate: now,
+            hasRecentError: true,
+            now: now
+        )) == .blocked)
+        #expect(phaseClassifier.classify(CodexMetadataSnapshot(
+            codexIsRunning: true,
+            latestActivityDate: now,
+            continuousActiveDuration: 60 * 60,
+            now: now
+        )) == .longWorking)
+        #expect(phaseClassifier.classify(CodexMetadataSnapshot(
+            codexIsRunning: true,
+            latestActivityDate: now,
+            hasRunningJob: true,
+            now: now
+        )) == .runningTool)
+        #expect(phaseClassifier.classify(CodexMetadataSnapshot(
+            codexIsRunning: true,
+            latestActivityDate: now,
+            hasRecentToolEvent: true,
+            now: now
+        )) == .runningTool)
+        #expect(phaseClassifier.classify(CodexMetadataSnapshot(
+            codexIsRunning: true,
+            latestActivityDate: now.addingTimeInterval(-30),
+            hasRecentCompletedJob: true,
+            now: now
+        )) == .completed)
+        #expect(phaseClassifier.classify(CodexMetadataSnapshot(
+            codexIsRunning: true,
+            latestActivityDate: now.addingTimeInterval(-3),
+            activeThreadUpdatedAt: now.addingTimeInterval(-3),
+            now: now
+        )) == .thinking)
+        #expect(phaseClassifier.classify(CodexMetadataSnapshot(
+            codexIsRunning: true,
+            latestActivityDate: now.addingTimeInterval(-3),
+            activeThreadUpdatedAt: now.addingTimeInterval(-30),
+            now: now
+        )) == .thinking)
+        #expect(phaseClassifier.classify(CodexMetadataSnapshot(
+            codexIsRunning: true,
+            latestActivityDate: now.addingTimeInterval(-30),
+            activeThreadUpdatedAt: now.addingTimeInterval(-30),
+            now: now,
+            activeThreshold: 8,
+            waitingThreshold: 90
+        )) == .waitingUser)
+        #expect(CodexWorkPhase.runningTool.presentationState == .toolRunning)
+        #expect(PetPresentationState.toolRunning.coarseStatus == .working)
+    }
+
+    @Test("Presentation transitions are debounced")
+    func presentationTransitionsAreDebounced() {
+        #expect(!transitionPolicy.canSwitch(
+            from: .toolRunning,
+            currentStateSince: now.addingTimeInterval(-3),
+            to: .reviewFocused,
+            candidateStateSince: now.addingTimeInterval(-3),
+            now: now
+        ))
+        #expect(!transitionPolicy.canSwitch(
+            from: .reviewFocused,
+            currentStateSince: now.addingTimeInterval(-20),
+            to: .waitingAttentive,
+            candidateStateSince: now.addingTimeInterval(-2),
+            now: now
+        ))
+        #expect(transitionPolicy.canSwitch(
+            from: .reviewFocused,
+            currentStateSince: now.addingTimeInterval(-20),
+            to: .waitingAttentive,
+            candidateStateSince: now.addingTimeInterval(-6),
+            now: now
+        ))
+        #expect(transitionPolicy.canSwitch(
+            from: .toolRunning,
+            currentStateSince: now,
+            to: .blockedConcerned,
+            candidateStateSince: now,
+            now: now
+        ))
+    }
+
     @Test("Action frame counts use tweened assets")
     func actionFrameCountsUseTweenedAssets() {
         let framePolicy = PetAnimationFramePolicy()
@@ -107,10 +202,20 @@ struct CodexActivityStatusTests {
 
         #expect(!ambientPolicy.largeActionSuites(for: .working).flatMap { $0 }.contains(.turning))
         #expect(!ambientPolicy.largeActionSuites(for: .waiting).flatMap { $0 }.contains(.turning))
-        #expect(ambientPolicy.microActionSuites(for: .working) == [[.breathing], [.eyeShiftLeft], [.eyeShiftRight], [.tinyHandAdjust], [.hairSway]])
-        #expect(ambientPolicy.microActionSuites(for: .waiting) == [[.breathing], [.weightShift], [.eyeShiftLeft], [.eyeShiftRight], [.shoulderRelax], [.tinyHandAdjust], [.hairSway]])
-        #expect(ambientPolicy.largeActionSuites(for: .working) == [[.glanceLeft], [.glanceRight], [.focusShift], [.fixPosture], [.postureReset], [.stretch]])
-        #expect(ambientPolicy.largeActionSuites(for: .waiting) == [[.glanceLeft], [.glanceRight], [.adjustOutfit], [.lookAround], [.postureReset], [.stretch], [.stepAside]])
+        #expect(ambientPolicy.restingAnimation(for: .toolRunning) == .tapKeyboard)
+        #expect(ambientPolicy.restingAnimation(for: .completedCalm) == .nod)
+        #expect(ambientPolicy.restingFrameIndex(for: .toolRunning, frameCount: 24) > 0)
+        #expect(ambientPolicy.restingFrameIndex(for: .completedCalm, frameCount: 16) > 0)
+        #expect(ambientPolicy.microActionSuites(for: .working) == [[.breathing], [.tinyHandAdjust], [.hairSway]])
+        #expect(ambientPolicy.microActionSuites(for: .waiting) == [[.breathing], [.tinyHandAdjust], [.hairSway]])
+        #expect(ambientPolicy.microActionSuites(for: .idleRelaxed).contains([.weightShift]))
+        #expect(ambientPolicy.largeActionSuites(for: .working) == [[.glanceLeft], [.glanceRight], [.focusShift], [.fixPosture], [.postureReset]])
+        #expect(ambientPolicy.largeActionSuites(for: .waiting) == [[.glanceLeft], [.glanceRight], [.adjustOutfit], [.lookAround]])
+        #expect(ambientPolicy.smallActionSuites(for: .toolRunning) == [[.tapKeyboard], [.checkNotes], [.focusShift]])
+        #expect(ambientPolicy.hoverActionSuites(for: .working) == [[.focusTighten], [.adjustGlasses], [.thinking]])
+        #expect(ambientPolicy.hoverActionSuites(for: .waiting) == [[.cursorLook, .hoverSmile], [.waving]])
+        #expect(ambientPolicy.hoverActionSuites(for: .toolRunning) == [[.tapKeyboard], [.focusShift], [.checkNotes]])
+        #expect(ambientPolicy.largeActionSuites(for: .longWorkTired) == [[.stretch], [.postureReset]])
     }
 
     @Test("Action catalog classifies action layers")
@@ -128,7 +233,7 @@ struct CodexActivityStatusTests {
         #expect(catalog.animations(for: .working, layer: .micro).contains(.breathing))
         #expect(catalog.animations(for: .waiting, layer: .micro).contains(.tinyHandAdjust))
         #expect(catalog.animations(for: .working, layer: .small) == [.adjustGlasses, .thinking, .nod, .tapKeyboard, .checkNotes, .stretchWrist])
-        #expect(catalog.animations(for: .waiting, layer: .expression).contains(.slowBlink))
+        #expect(catalog.animations(for: .waiting, layer: .expression).isEmpty)
         #expect(catalog.animations(for: .waiting, layer: .large).contains(.stepAside))
         #expect(!catalog.animations(for: .waiting, layer: .large).contains(.turning))
     }
@@ -138,7 +243,7 @@ struct CodexActivityStatusTests {
         let now = Date(timeIntervalSince1970: 1_000)
         let timeline = PetActionTimeline()
         let busyState = PetActionTimelineState(
-            currentStatus: .waiting,
+            currentPresentationState: .waitingAttentive,
             currentLayer: .small,
             currentPriority: .p2,
             reservedUntil: now.addingTimeInterval(1.0),
@@ -149,20 +254,20 @@ struct CodexActivityStatusTests {
         )
 
         #expect(timeline.decide(
-            request: PetActionRequest(animation: .waving, sourceStatus: .waiting, submittedAt: now),
+            request: PetActionRequest(animation: .waving, sourcePresentationState: .waitingAttentive, submittedAt: now),
             state: busyState
         ).outcome == .queue)
         #expect(timeline.decide(
-            request: PetActionRequest(animation: .lookAround, sourceStatus: .waiting, submittedAt: now),
+            request: PetActionRequest(animation: .lookAround, sourcePresentationState: .waitingAttentive, submittedAt: now),
             state: busyState
         ).outcome == .drop)
         #expect(timeline.decide(
-            request: PetActionRequest(animation: .cursorLook, sourceStatus: .waiting, submittedAt: now),
+            request: PetActionRequest(animation: .cursorLook, sourcePresentationState: .waitingAttentive, submittedAt: now),
             state: busyState
         ).outcome == .playNow)
 
         let microBusyState = PetActionTimelineState(
-            currentStatus: .waiting,
+            currentPresentationState: .waitingAttentive,
             currentLayer: .micro,
             currentPriority: .p3,
             reservedUntil: now.addingTimeInterval(1.0),
@@ -172,7 +277,7 @@ struct CodexActivityStatusTests {
             lastInteractionAt: now.addingTimeInterval(-30)
         )
         #expect(timeline.decide(
-            request: PetActionRequest(animation: .waving, sourceStatus: .waiting, submittedAt: now),
+            request: PetActionRequest(animation: .waving, sourcePresentationState: .waitingAttentive, submittedAt: now),
             state: microBusyState
         ).outcome == .playNow)
     }
