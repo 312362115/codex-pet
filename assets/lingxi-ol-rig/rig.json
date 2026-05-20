@@ -1,0 +1,36 @@
+{
+  "canvas": {
+    "width": 576,
+    "height": 624
+  },
+  "parts": [
+    {
+      "id": "body",
+      "image": "parts/body.png",
+      "parent": null,
+      "position": {
+        "x": 288,
+        "y": 312
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "zIndex": 10
+    },
+    {
+      "id": "head",
+      "image": "parts/head.png",
+      "parent": null,
+      "position": {
+        "x": 288,
+        "y": 434
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.6955
+      },
+      "zIndex": 30
+    }
+  ]
+}

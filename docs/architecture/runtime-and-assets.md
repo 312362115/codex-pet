@@ -8,6 +8,7 @@
 | 状态与策略 | `Sources/PetCompanion/CodexActivityStatus.swift` | 定义 Codex 粗状态、工作阶段、宠物展示状态、动画枚举、状态分类、帧数、动作时长和动作套组策略。 |
 | 策略测试 | `Tests/PetCompanionStatusTestRunner.swift` | 验证状态分类、展示状态映射、动画映射、帧数和动作套组。 |
 | 运行帧生成 | `scripts/build-shirt-skirt-assets.py` | 从参考图生成 `assets/lingxi-ol-hires/` 运行时 PNG 帧。 |
+| Rig 资产生成 | `scripts/build-rig-assets.py` | 从当前待机帧机械生成 `assets/lingxi-ol-rig/` PoC 拆层资产。 |
 | 源码安装 | `scripts/install.sh` | 测试、构建、签名、安装并重启本机桌宠。 |
 | Release 打包 | `scripts/package-release.sh` | 生成 GitHub Release 预编译 zip 和 checksum。 |
 
@@ -21,13 +22,13 @@ CodexActivityReader
   -> AppDelegate.handlePresentationState
   -> PetAmbientActionPolicy
   -> PetView.play / PetView.settle
-  -> PetFrameProvider
-  -> 高清 PNG 帧或 spritesheet fallback
+  -> PetRenderModePolicy
+  -> 高清 PNG 帧 / SpriteKit rig / spritesheet fallback
 ```
 
-`PetView` 使用 `context.interpolationQuality = .high` 绘制帧，并通过 aspect-fit 保持原始帧比例，避免窗口尺寸和素材尺寸不一致时产生拉伸。
+`PetView` 使用 `context.interpolationQuality = .high` 绘制 PNG 帧，并通过 aspect-fit 保持原始帧比例，避免窗口尺寸和素材尺寸不一致时产生拉伸。等待/待命状态下，如果 `assets/lingxi-ol-rig/rig.json` 和部件 PNG 可用，`PetView` 会在宠物绘制区域显示透明 `SKView`，由 `PetRigScene` 播放 `breathing`。脸部和头发相关动作暂时仍走 PNG 帧，避免机械拆层素材产生重复覆盖和脸部线条。
 
-动作播放使用固定总时长和动态帧间隔。运行时按实际帧数自动计算单帧间隔，避免补帧后动作整体变慢。
+PNG 动作播放使用固定总时长和动态帧间隔。运行时按实际帧数自动计算单帧间隔，避免补帧后动作整体变慢。SpriteKit rig 动作使用同一套 `PetAnimationTimingPolicy` 总时长，但不启动 PNG frame timer，而是通过一次性 timer 推进动作 suite。
 
 ## 状态读取
 
@@ -74,7 +75,7 @@ Codex 元数据先被分类为 `CodexWorkPhase`，再映射为可长期停留的
 | 微动作 | 根据展示状态选择 `breathing`、`hair-sway`、`weight-shift`、`shoulder-relax`、`tiny-hand-adjust`，由独立 timer 低干扰插入。 |
 | 小动作 | `reviewFocused` 偏审阅动作，`toolRunning` 偏工具运行动作，`waitingAttentive` 偏回应用户动作，`longWorkTired` 偏舒展恢复动作。 |
 | 中/大动作 | 按展示状态低频选择 `glance-left/right`、`focus-shift`、`fix-posture`、`posture-reset`、`stretch`、`look-around` 等动作。 |
-| 交互动作 | hover 按展示状态轮换短反馈：等待态看光标/挥手，思考态收紧专注/扶眼镜，工具态敲键盘/切换焦点，完成态微笑/点头；右键触发 `context-menu-attend`；drag 释放触发 `drag-release-settle`。 |
+| 交互动作 | hover 按展示状态轮换短反馈：等待态看光标/挥手，思考态扶眼镜/思考，工具态敲键盘/切换焦点，完成态点头/肩部放松；右键在离线态显示 `failed`，其它状态显示 `cursor-look`；drag 释放触发 `drag-release-settle`。 |
 | 调试动作 | `turning` 只保留为调试/素材检查，不进入默认调度。 |
 
 所有动作都不连续 loop，播完回到当前展示状态的停留姿态。
@@ -88,12 +89,10 @@ Codex 元数据先被分类为 `CodexWorkPhase`，再映射为可长期停留的
 | 大动作调度 | working `220-360s`，waiting `200-340s` | 只在空窗执行，忙碌、hover、状态刚切换时丢弃。 |
 | 交互调度 | hover、右键、drag、状态变化事件驱动 | hover 不抢正在播放的可见动作；右键和拖动仍是高优先级。 |
 
-当前高频动作帧数：
+当前运行资产帧数：
 
 | 动作 | 帧数 | 说明 |
 |------|------|------|
-| `blink` / `slow-blink` / `eye-shift-left/right` | 5-8 | 旧表情 clip 资产保留，但不进入默认独立调度。 |
-| `focus-tighten` / `small-smile` / `hover-smile` / `context-menu-attend` | 12 | 旧表情/交互 clip 资产保留；后续应改为动作立绘自带表情。 |
 | `breathing` | 12 | 低干扰呼吸微动作。 |
 | `hair-sway` | 12 | 头发/整体轮廓轻摆。 |
 | `weight-shift` | 16 | waiting 重心变化。 |
@@ -120,6 +119,8 @@ Codex 元数据先被分类为 `CodexWorkPhase`，再映射为可长期停留的
 | `wake-up` | 20 | Codex 从离线/等待恢复的轻反馈。 |
 | `turning` | 25 | 8 张转身关键帧之间插入缓动补间，并回到正面。 |
 
+`blink`、`slow-blink`、`eye-shift-left/right`、`focus-tighten`、`relax-face`、`small-smile`、`tired-soften`、`curious-look`、`hover-smile`、`context-menu-attend` 是旧脸部覆盖方案留下的兼容枚举，不再作为运行素材目录保存，也不进入默认调度。旧目录里的红线覆盖和坐标绘制痕迹会破坏脸部观感，已从 `assets/lingxi-ol-hires/` 清理。
+
 ## 素材目录
 
 ```text
@@ -132,15 +133,6 @@ assets/
     running/
     waiting/
     failed/
-    blink/
-    slow-blink/
-    eye-shift-left/
-    eye-shift-right/
-    focus-tighten/
-    relax-face/
-    small-smile/
-    tired-soften/
-    curious-look/
     breathing/
     hair-sway/
     weight-shift/
@@ -153,13 +145,10 @@ assets/
     check-notes/
     stretch-wrist/
     waving/
-    jumping/
     review/
     glance-left/
     glance-right/
     cursor-look/
-    hover-smile/
-    context-menu-attend/
     focus-shift/
     fix-posture/
     adjust-outfit/
@@ -171,6 +160,11 @@ assets/
     wake-up/
     turning/
     manifest.txt
+  lingxi-ol-rig/
+    rig.json
+    parts/
+      body.png
+      head.png
   reference/generated/
     base-shirt-skirt-hires.png
     action-strip-shirt-skirt-consistent.png
@@ -178,6 +172,10 @@ assets/
 ```
 
 `assets/lingxi-ol/` 是 Codex 标准宠物包备份。当前独立桌宠优先使用 `assets/lingxi-ol-hires/`，只有高清帧缺失时才 fallback 到 spritesheet。
+
+`assets/reference/generated/` 只保留当前运行帧重建所需的 3 张源图。历史探索图、旧 turntable 草稿和旧动作探索图已清理，避免把废弃素材误当作当前来源。
+
+`assets/lingxi-ol-rig/` 是第一版 SpriteKit rig PoC 资产。它从 `waiting/00.png` 机械拆层生成，用于验证透明 `SKView`、动作分流、rig/PNG 切换和打包路径。当前只保留 `body` 和 `head` 两层，用于安全验证呼吸微动作；它不是最终高质量拆层资产。脸部、头发、眼镜等局部分层需要重新生成或手工修正后再接入。
 
 ## 素材生成约束
 
@@ -196,6 +194,7 @@ MAX_UPSCALE = 1.0
 - 透明像素写成 `(0,0,0,0)`，减少隐藏色污染。
 - 保留人物比例，由运行时 aspect-fit 再绘制到窗口内。
 - 相邻关键帧使用 premultiplied-alpha 补间，避免透明边缘在普通 RGBA 混合下变灰或泛色。
+- 生成脚本只保留 `RUNTIME_STATES` 清单中的目录，运行前会删除不在清单内的旧状态目录，防止废弃脸部覆盖素材回流。
 
 ## 发布包结构
 

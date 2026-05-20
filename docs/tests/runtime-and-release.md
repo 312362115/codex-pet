@@ -42,8 +42,8 @@ PASS status logic
 
 关键帧数预期：
 
-- 旧表情 clip：`blink` 5 帧，`slow-blink` 和 `eye-shift-left/right` 8 帧；这些资产保留但不默认独立调度。
-- 旧表情过渡动作：12 帧。
+- 旧表情兼容枚举：`blink` 5 帧，`slow-blink` 和 `eye-shift-left/right` 8 帧；这些只是策略兼容断言，不再对应运行素材目录。
+- 旧脸部覆盖动作：`focus-tighten`、`relax-face`、`small-smile`、`tired-soften`、`curious-look`、`hover-smile`、`context-menu-attend` 保留兼容策略，不进入默认调度，也不打包运行素材。
 - 微动作：`breathing`、`hair-sway` 为 12 帧；`weight-shift`、`shoulder-relax`、`tiny-hand-adjust` 为 16 帧。
 - `running`：24 帧。
 - `waving`：24 帧。
@@ -59,8 +59,6 @@ PASS status logic
 - `glance-left`：16 帧。
 - `glance-right`：16 帧。
 - `cursor-look`：16 帧。
-- `hover-smile`：12 帧。
-- `context-menu-attend`：12 帧。
 - `look-around`：32 帧。
 - `stretch`：32 帧。
 - `step-aside`：32 帧。
@@ -70,8 +68,7 @@ PASS status logic
 
 对应时长预期：
 
-- 旧表情 clip：`blink` 为 `0.25s`，`slow-blink` 为 `0.7s`，`eye-shift-left/right` 为 `0.8s`。
-- 旧表情过渡：`1.0s`。
+- 旧表情兼容策略：`blink` 为 `0.25s`，`slow-blink` 为 `0.7s`，`eye-shift-left/right` 为 `0.8s`；这些动作不进入默认调度。
 - 微动作：`1.2-1.6s`。
 - 短动作：`2.4s`。
 - 短瞥动作：`1.6s`。
@@ -98,6 +95,42 @@ PASS status logic
 - ad-hoc 签名和 `codesign --verify --deep --strict` 通过。
 - App 安装到 `~/.codex/pet-companion/CodexPetCompanion.app`。
 - 旧桌宠进程被停止，新版本启动。
+
+## 用例 2.1：SpriteKit rig 资源打包
+
+前置条件：在仓库根目录。
+
+执行命令：
+
+```bash
+./scripts/build-rig-assets.py
+./scripts/build-app.sh
+find build/CodexPetCompanion.app/Contents/Resources/lingxi-ol-rig -maxdepth 2 -type f | sort
+```
+
+预期结果：
+
+- 输出包含 `rig.json`。
+- 输出包含 `parts/body.png` 和 `parts/head.png`。
+- 输出不包含 `parts/eyes-blink.png` 等脸部覆盖层；脸部 rig 在干净拆层素材完成前不打包。
+- `./scripts/build-app.sh` 通过，说明 SpriteKit 链接和资源复制没有破坏构建。
+
+## 用例 2.2：运行素材清理检查
+
+前置条件：在仓库根目录，已经运行 `./scripts/build-shirt-skirt-assets.py`。
+
+执行命令：
+
+```bash
+find assets/lingxi-ol-hires -maxdepth 1 -type d | sort
+find assets/reference/generated -maxdepth 1 -type f | sort
+```
+
+预期结果：
+
+- `assets/lingxi-ol-hires/` 不包含 `blink`、`slow-blink`、`eye-shift-left`、`eye-shift-right`、`focus-tighten`、`relax-face`、`small-smile`、`tired-soften`、`curious-look`、`hover-smile`、`context-menu-attend`、`jumping`、`running-left`、`running-right`。
+- `assets/reference/generated/` 只包含 `README.md`、`base-shirt-skirt-hires.png`、`action-strip-shirt-skirt-consistent.png`、`turntable-strip-shirt-skirt-consistent.png`。
+- 运行帧中的重复静止帧允许存在，它们用于停帧 timing，不按单帧去重。
 
 ## 用例 3：Release 打包
 

@@ -57,6 +57,7 @@ echo "==> Codex Pet install root: $ROOT"
 if [ "$rebuild_assets" -eq 1 ]; then
   echo "==> Rebuilding runtime assets"
   "$ROOT/scripts/build-shirt-skirt-assets.py"
+  "$ROOT/scripts/build-rig-assets.py"
 fi
 
 if [ "$run_tests" -eq 1 ]; then
@@ -73,6 +74,7 @@ codesign --verify --deep --strict "$BUILD_APP"
 
 echo "==> Installing to $INSTALLED_APP"
 mkdir -p "$INSTALL_DIR"
+rm -rf "$INSTALLED_APP"
 ditto "$BUILD_APP" "$INSTALLED_APP"
 
 if [ "$restart_app" -eq 1 ]; then

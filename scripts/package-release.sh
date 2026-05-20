@@ -77,6 +77,7 @@ echo "==> Packaging CodexPetCompanion $VERSION for $PLATFORM"
 if [ "$rebuild_assets" -eq 1 ]; then
   echo "==> Rebuilding runtime assets"
   "$ROOT/scripts/build-shirt-skirt-assets.py"
+  "$ROOT/scripts/build-rig-assets.py"
 fi
 
 if [ "$run_tests" -eq 1 ]; then
@@ -146,6 +147,7 @@ fi
 
 echo "==> Installing to $INSTALLED_APP"
 mkdir -p "$INSTALL_DIR"
+rm -rf "$INSTALLED_APP"
 ditto "$APP_SOURCE" "$INSTALLED_APP"
 
 if [ "$restart_app" -eq 1 ]; then

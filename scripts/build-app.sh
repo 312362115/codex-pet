@@ -25,6 +25,7 @@ swiftc \
   -module-cache-path "$CACHE_DIR" \
   -Xcc -fmodules-cache-path="$CACHE_DIR" \
   -framework AppKit \
+  -framework SpriteKit \
   "$ROOT/Sources/PetCompanion/CodexActivityStatus.swift" \
   "$ROOT/Sources/CodexPetCompanion/main.swift" \
   -o "$BIN_DIR/CodexPetCompanion"
@@ -41,6 +42,9 @@ swiftc \
 
 copy_resource_dir "$ROOT/assets/lingxi-ol-hires" "$APP_DIR/Contents/Resources/lingxi-ol-hires"
 copy_resource_dir "$ROOT/assets/lingxi-ol" "$APP_DIR/Contents/Resources/lingxi-ol"
+if [ -d "$ROOT/assets/lingxi-ol-rig" ]; then
+  copy_resource_dir "$ROOT/assets/lingxi-ol-rig" "$APP_DIR/Contents/Resources/lingxi-ol-rig"
+fi
 
 chmod +x "$BIN_DIR/CodexPetCompanion"
 echo "$APP_DIR"

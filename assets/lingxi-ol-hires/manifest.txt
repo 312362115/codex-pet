@@ -7,55 +7,38 @@ max_upscale=1.0
 motion=alpha-aware tweened transitions, no body scale, no upscale
 action_frame_count=24
 glance_frame_count=16
-eye_shift_frame_count=8
 micro_short_frame_count=12
 micro_frame_count=16
-blink_frame_count=5
-slow_blink_frame_count=8
-expression_frame_count=12
+short_feedback_frame_count=12
 nod_frame_count=16
 look_around_frame_count=32
 large_action_frame_count=32
 turn_frame_count=25
 adjust-glasses 24
 adjust-outfit 24
-blink 5
 breathing 12
 check-notes 24
-context-menu-attend 12
-curious-look 12
 cursor-look 16
 drag-release-settle 12
-eye-shift-left 8
-eye-shift-right 8
 failed 10
 fix-posture 24
 focus-shift 24
-focus-tighten 12
 glance-left 16
 glance-right 16
 hair-sway 12
-hover-smile 12
 idle 10
-jumping 8
 look-around 32
 nod 16
 posture-reset 32
-relax-face 12
 review 10
 running 24
-running-left 25
-running-right 25
 shoulder-relax 16
-slow-blink 8
-small-smile 12
 step-aside 32
 stretch 32
 stretch-wrist 24
 tap-keyboard 24
 thinking 24
 tiny-hand-adjust 16
-tired-soften 12
 turning 25
 waiting 10
 wake-up 20

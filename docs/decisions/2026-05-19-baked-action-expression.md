@@ -37,7 +37,7 @@ action clip = 身体姿态 + 手臂/头发/衣服变化 + 适合该动作的脸�
 - 停用独立 expression timer，不再高频单独播放 `blink`、`eye-shift`、`small-smile`。
 - 默认 ambient 只调度微动作、小动作、大动作和交互动作。
 - `expressions` 字段继续保留在 `PetActionDescriptor`，作为动作资产生成和验收时的语义约束。
-- 旧的 expression clip 描述保留但不进入默认调度，避免破坏已有素材目录和枚举兼容性。
+- 旧的 expression clip 描述保留但不进入默认调度，仅用于枚举和策略兼容；对应运行素材目录已清理，避免红线覆盖素材回流。
 
 ## TODO
 

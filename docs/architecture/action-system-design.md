@@ -108,11 +108,11 @@ stateDiagram-v2
 |----------|----------|----------|------------|
 | `offlineRest` | `failed` | 无 | 无或极低频静止。 |
 | `idleRelaxed` | `waiting` | `shoulder-relax` | `breathing`、`weight-shift`、`shoulder-relax`、`hair-sway`。 |
-| `waitingAttentive` | `waiting` | `cursor-look` | `cursor-look`、`waving`、`hover-smile`。 |
+| `waitingAttentive` | `waiting` | `cursor-look` | `cursor-look`、`waving`。 |
 | `reviewFocused` | `review` | `adjust-glasses` | `adjust-glasses`、`thinking`、`nod`、`check-notes`。 |
 | `toolRunning` | `tap-keyboard` 中段帧 | `tap-keyboard` | `tap-keyboard`、`focus-shift`、`check-notes`。 |
-| `blockedConcerned` | `failed` 中后段帧 | `tired-soften` | `glance-left/right`、`shoulder-relax`。 |
-| `completedCalm` | `nod` 中后段帧 | `nod`、`hover-smile` | `hover-smile`、`nod`、`shoulder-relax`。 |
+| `blockedConcerned` | `failed` 中后段帧 | 无 | `glance-left/right`、`shoulder-relax`。 |
+| `completedCalm` | `nod` 中后段帧 | `nod` | `nod`、`shoulder-relax`。 |
 | `longWorkTired` | `stretch-wrist` 中段帧 | `stretch-wrist` | `stretch-wrist`、`shoulder-relax`、`fix-posture`。 |
 
 ## 表情体系
@@ -134,9 +134,9 @@ stateDiagram-v2
 
 | 动作 | 类型 | 频率 | 时长 | 说明 |
 |------|------|------|------|------|
-| `blink`、`slow-blink` | 旧表情 clip | 暂不默认调度 | `0.12-0.8s` | 资产保留，后续优先烘焙进基础姿态或动作 clip。 |
-| `eye-shift-left/right` | 旧表情 clip | 暂不默认调度 | `0.4-0.9s` | 不再作为独立调度层；视线变化随 `cursor-look`、`glance` 等动作画入。 |
-| `small-smile`、`focus-tighten`、`relax-face` | 旧表情过渡 | 暂不默认调度 | `0.6-1.2s` | 语义保留，视觉效果改为动作立绘自带表情。 |
+| `blink`、`slow-blink` | 旧表情兼容枚举 | 不默认调度 | `0.12-0.8s` | 运行素材已清理，后续优先烘焙进基础姿态或动作 clip。 |
+| `eye-shift-left/right` | 旧表情兼容枚举 | 不默认调度 | `0.4-0.9s` | 不再作为独立调度层；视线变化随 `cursor-look`、`glance` 等动作画入。 |
+| `small-smile`、`focus-tighten`、`relax-face` | 旧表情兼容枚举 | 不默认调度 | `0.6-1.2s` | 语义保留，运行素材已清理，视觉效果改为动作立绘自带表情。 |
 
 ### 技术建议
 
@@ -233,10 +233,10 @@ stateDiagram-v2
 | 动作 | 触发 | 优先级 | 说明 |
 |------|------|--------|------|
 | `cursor-look` | 鼠标悬停 | 高 | 视线/头部看向光标，不完整转身。 |
-| `hover-smile` | 鼠标悬停持续 | 中 | 旧交互 clip，默认 hover 先用 `cursor-look`。 |
+| `hover-smile` | 旧鼠标悬停持续 | 中 | 仅保留兼容枚举，运行素材已清理，默认 hover 不再调度。 |
 | `drag-freeze` | 拖动开始 | 最高 | 暂停动画，避免拖动时动作漂移。 |
 | `drag-release-settle` | 拖动结束 | 高 | 回到基础姿态，必要时做轻微整理。 |
-| `context-menu-attend` | 右键菜单 | 高 | 角色短暂停止并看向用户。 |
+| `context-menu-attend` | 旧右键菜单 | 高 | 仅保留兼容枚举；当前右键菜单复用 `cursor-look` 或离线 `failed`。 |
 | `wake-up` | Codex 启动/恢复 | 高 | 从 offline/error 过渡到 waiting。 |
 | `work-start` | 进入 working | 高 | 表情转 focused，姿态进入 review。 |
 | `work-done` | 退出 working | 中 | 放松表情，回到 waiting。 |
@@ -314,7 +314,7 @@ entry cue -> micro motion -> main action with expression -> settle -> base loop
 |--------|----------|----------|----------|--------|
 | `hover-attend` | working: `cursor-look/focus-shift/nod`；waiting: `cursor-look/waving` | 鼠标悬停 | “注意到用户了。” | P1 |
 | `hover-release` | `cursor-look -> current base pose` | 鼠标离开 | “回到原来的状态。” | P1 |
-| `context-menu-attend` | `current pose -> context-menu-attend(curious)` | 右键菜单打开 | “正在等待用户选择。” | P1 |
+| `context-menu-attend` | `current pose -> cursor-look(curious)`；离线时 `failed` | 右键菜单打开 | “正在等待用户选择。” | P1 |
 | `drag-start` | `current frame -> drag-freeze` | 拖动开始 | “被用户拿起，动作暂停。” | P0 |
 | `drag-end` | `drag-freeze -> drag-release-settle -> current base pose` | 拖动结束 | “站稳并回到状态。” | P0 |
 
@@ -368,13 +368,13 @@ entry cue -> micro motion -> main action with expression -> settle -> base loop
 
 | 输入条件 | 组合选择 | 输出动作 |
 |----------|----------|----------|
-| `working`，刚进入状态 | `work-enter` | `focus-tighten -> review + focused` |
-| `working`，空闲 20 秒 | `adjust-and-continue` | `eye-shift-down -> adjust-glasses -> nod` |
+| `working`，刚进入状态 | `work-enter` | `adjust-glasses -> review + focused` |
+| `working`，空闲 20 秒 | `adjust-and-continue` | `adjust-glasses -> nod` |
 | `waiting`，用户 hover | `hover-attend` | `cursor-look` 或 `waving` |
-| `waiting`，长时间无活动 | `long-wait-tired` | `slow-blink -> tired-soften -> weight-shift` |
+| `waiting`，长时间无活动 | `long-wait-tired` | `shoulder-relax -> weight-shift` |
 | `offline -> waiting` | `wake-up` | `surprised -> neutral -> waiting` |
 
-这种做法可以让同一个动作在不同组合里表达不同语义。例如 `blink` 在 `focused-review` 里是自然生命感，在 `long-wait-tired` 里是疲惫，在 `hover-release` 里是结束交互后的回落。
+这种做法可以让同一个动作在不同组合里表达不同语义。例如 `shoulder-relax` 在 `completedCalm` 里是完成后的回落，在 `long-wait-tired` 里是等待过久后的疲惫。
 
 ## 转身动作重新定义
 
@@ -486,7 +486,7 @@ Scheduler Request
 - 同层动作互斥：主动作播放时不再启动另一个主动作。
 - 表情随动作资产一起播放，不叠加独立脸部动作，避免主动作峰值期间穿帮。
 - 大动作必须检查用户是否正在拖动、hover、或 Codex 状态是否刚变化。
-- 长时间 waiting 才允许 `tired` 表情和 `slow-blink` 增多。
+- 长时间 waiting 才允许 `tired` 语义动作增多，但不重新启用独立脸部覆盖素材。
 
 建议使用两级冷却：
 
@@ -527,7 +527,7 @@ Scheduler Request
 |--------|------|----------|
 | `t=0` small action 开始，`t=0.4` 用户 hover | hover 打断小动作，进入 `hover-attend`，小动作不恢复。 |
 | `t=0` large action 准备开始，`t=0.1` 状态变 working | 丢弃 large action，播放 `work-enter`。 |
-| `t=0` blink 即将触发，`t=0.05` adjust-glasses 到峰值 | blink 延后到 settle 后。 |
+| `t=0` breathing 即将触发，`t=0.05` adjust-glasses 到峰值 | breathing 丢弃或延后到 settle 后。 |
 | `t=0` waiting 已 120s，large action 触发，`t=0.5` 用户拖动 | drag 立即冻结，large action 终止并在释放后回基础姿态。 |
 | `t=0` hover-release，`t=0.2` small action timer 到点 | small action 延后至少 `2-4s`，避免刚离开就立刻动。 |
 
@@ -563,12 +563,6 @@ assets/lingxi-ol-hires/
     waiting/
     failed/
     idle-relaxed/
-  expressions/
-    blink/
-    slow-blink/
-    focus-tighten/
-    small-smile/
-    tired-soften/
   actions/
     waving/
     adjust-glasses/
@@ -768,7 +762,7 @@ assets/actions/
   "interruptPolicy": "finish-or-cut-at-safe-frame",
   "safeExitFrames": [0, 1, 10, 11],
   "layers": ["body"],
-  "expressionSlots": ["blink", "eye-shift"],
+  "expressionSlots": ["curious"],
   "cooldown": [18, 45]
 }
 ```
@@ -843,7 +837,7 @@ ActionClip
 
 - 增加 `PetExpression` 概念。（已落地）
 - `PetExpression` 作为动作资产语义标签保留，不表示 runtime 独立图层。（已落地）
-- `blink`、`slow-blink`、`focus-tighten`、`small-smile` 等旧表情 clip 保留为兼容资产，但不进入默认独立调度。（已落地）
+- `blink`、`slow-blink`、`focus-tighten`、`small-smile` 等旧表情 clip 仅保留兼容枚举，运行素材已清理，不进入默认独立调度。（已落地）
 - working 使用 `focused`，waiting 使用 `neutral/curious/tired`，offline 使用 `error`。（已纳入 action catalog）
 
 ### Phase 3：丰富小动作和中动作

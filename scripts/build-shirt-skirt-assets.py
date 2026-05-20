@@ -1,8 +1,9 @@
 #!/opt/homebrew/bin/python3
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageFilter
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,14 +20,11 @@ GLANCE_FRAME_COUNT = 16
 GLANCE_START_HOLD_FRAMES = 2
 GLANCE_TARGET_HOLD_FRAMES = 4
 GLANCE_TRANSITION_FRAMES = 5
-EYE_SHIFT_FRAME_COUNT = 8
 MICRO_SHORT_FRAME_COUNT = 12
 MICRO_FRAME_COUNT = 16
 TURN_FRAME_COUNT = 25
 TURN_SEGMENT_FRAMES = 3
-BLINK_FRAME_COUNT = 5
-SLOW_BLINK_FRAME_COUNT = 8
-EXPRESSION_FRAME_COUNT = 12
+SHORT_FEEDBACK_FRAME_COUNT = 12
 NOD_FRAME_COUNT = 16
 LOOK_AROUND_FRAME_COUNT = 32
 LARGE_ACTION_FRAME_COUNT = 32
@@ -34,11 +32,38 @@ WAKE_UP_FRAME_COUNT = 20
 ACTION_STRIP_SOURCE = REFERENCE_ROOT / "action-strip-shirt-skirt-consistent.png"
 TURNTABLE_STRIP_SOURCE = REFERENCE_ROOT / "turntable-strip-shirt-skirt-consistent.png"
 PRIMARY_SOURCE = REFERENCE_ROOT / "base-shirt-skirt-hires.png"
-LEFT_EYE_LINE = ((265, 137), (279, 138))
-RIGHT_EYE_LINE = ((296, 137), (310, 138))
-LEFT_BROW_LINE = ((262, 128), (281, 126))
-RIGHT_BROW_LINE = ((293, 126), (313, 128))
-MOUTH_BOX = (282, 157, 299, 166)
+RUNTIME_STATES = {
+    "adjust-glasses",
+    "adjust-outfit",
+    "breathing",
+    "check-notes",
+    "cursor-look",
+    "drag-release-settle",
+    "failed",
+    "fix-posture",
+    "focus-shift",
+    "glance-left",
+    "glance-right",
+    "hair-sway",
+    "idle",
+    "look-around",
+    "nod",
+    "posture-reset",
+    "review",
+    "running",
+    "shoulder-relax",
+    "step-aside",
+    "stretch",
+    "stretch-wrist",
+    "tap-keyboard",
+    "thinking",
+    "tiny-hand-adjust",
+    "turning",
+    "waiting",
+    "wake-up",
+    "waving",
+    "weight-shift",
+}
 
 def is_chroma_green(pixel: tuple[int, int, int, int]) -> bool:
     red, green, blue, alpha = pixel
@@ -172,45 +197,6 @@ def shifted_frame(frame: Image.Image, offset_x: int, offset_y: int) -> Image.Ima
     return clean_edge_residue(shifted)
 
 
-def draw_eye_lines(frame: Image.Image, color: tuple[int, int, int, int], width: int = 2) -> Image.Image:
-    output = frame.convert("RGBA").copy()
-    draw = ImageDraw.Draw(output, "RGBA")
-    draw.line(LEFT_EYE_LINE, fill=color, width=width)
-    draw.line(RIGHT_EYE_LINE, fill=color, width=width)
-    return clean_edge_residue(output)
-
-
-def draw_shifted_eye_lines(frame: Image.Image, offset_x: int) -> Image.Image:
-    output = frame.convert("RGBA").copy()
-    draw = ImageDraw.Draw(output, "RGBA")
-    left_line = (
-        (LEFT_EYE_LINE[0][0] + offset_x, LEFT_EYE_LINE[0][1]),
-        (LEFT_EYE_LINE[1][0] + offset_x, LEFT_EYE_LINE[1][1]),
-    )
-    right_line = (
-        (RIGHT_EYE_LINE[0][0] + offset_x, RIGHT_EYE_LINE[0][1]),
-        (RIGHT_EYE_LINE[1][0] + offset_x, RIGHT_EYE_LINE[1][1]),
-    )
-    draw.line(left_line, fill=(35, 24, 22, 180), width=2)
-    draw.line(right_line, fill=(35, 24, 22, 180), width=2)
-    return clean_edge_residue(output)
-
-
-def draw_brows(frame: Image.Image) -> Image.Image:
-    output = frame.convert("RGBA").copy()
-    draw = ImageDraw.Draw(output, "RGBA")
-    draw.line(LEFT_BROW_LINE, fill=(42, 29, 25, 150), width=2)
-    draw.line(RIGHT_BROW_LINE, fill=(42, 29, 25, 150), width=2)
-    return clean_edge_residue(output)
-
-
-def draw_smile(frame: Image.Image) -> Image.Image:
-    output = frame.convert("RGBA").copy()
-    draw = ImageDraw.Draw(output, "RGBA")
-    draw.arc(MOUTH_BOX, start=15, end=165, fill=(126, 34, 42, 155), width=2)
-    return clean_edge_residue(output)
-
-
 def transition_frames(start: Image.Image, end: Image.Image, frame_count: int) -> list[Image.Image]:
     return [
         tween_frame(start, end, index / frame_count)
@@ -239,19 +225,6 @@ def glance_sequence(primary_frame: Image.Image, glance_frame: Image.Image) -> li
     ]
     if len(frames) != GLANCE_FRAME_COUNT:
         raise AssertionError(f"Expected {GLANCE_FRAME_COUNT} glance frames, got {len(frames)}")
-    return frames
-
-
-def eye_shift_sequence(primary_frame: Image.Image, offset_x: int) -> list[Image.Image]:
-    shifted = draw_shifted_eye_lines(primary_frame, offset_x)
-    frames = [
-        primary_frame.copy(),
-        *transition_frames(primary_frame, shifted, 3),
-        *[shifted.copy() for _ in range(2)],
-        *transition_frames(shifted, primary_frame, 2),
-    ]
-    if len(frames) != EYE_SHIFT_FRAME_COUNT:
-        raise AssertionError(f"Expected {EYE_SHIFT_FRAME_COUNT} eye-shift frames, got {len(frames)}")
     return frames
 
 
@@ -305,45 +278,6 @@ def posture_reset_sequence(primary_frame: Image.Image) -> list[Image.Image]:
     return frames
 
 
-def blink_sequence(primary_frame: Image.Image) -> list[Image.Image]:
-    half = draw_eye_lines(primary_frame, (52, 34, 30, 120), width=1)
-    closed = draw_eye_lines(primary_frame, (45, 30, 27, 190), width=3)
-    frames = [primary_frame.copy(), half, closed, half, primary_frame.copy()]
-    if len(frames) != BLINK_FRAME_COUNT:
-        raise AssertionError(f"Expected {BLINK_FRAME_COUNT} blink frames, got {len(frames)}")
-    return frames
-
-
-def slow_blink_sequence(primary_frame: Image.Image) -> list[Image.Image]:
-    half = draw_eye_lines(primary_frame, (52, 34, 30, 120), width=1)
-    closed = draw_eye_lines(primary_frame, (45, 30, 27, 190), width=3)
-    frames = [
-        primary_frame.copy(),
-        half,
-        closed,
-        closed.copy(),
-        closed.copy(),
-        closed.copy(),
-        half.copy(),
-        primary_frame.copy(),
-    ]
-    if len(frames) != SLOW_BLINK_FRAME_COUNT:
-        raise AssertionError(f"Expected {SLOW_BLINK_FRAME_COUNT} slow blink frames, got {len(frames)}")
-    return frames
-
-
-def expression_pulse_sequence(primary_frame: Image.Image, peak_frame: Image.Image) -> list[Image.Image]:
-    frames = [
-        primary_frame.copy(),
-        *transition_frames(primary_frame, peak_frame, 4),
-        *[peak_frame.copy() for _ in range(3)],
-        *transition_frames(peak_frame, primary_frame, 4),
-    ]
-    if len(frames) != EXPRESSION_FRAME_COUNT:
-        raise AssertionError(f"Expected {EXPRESSION_FRAME_COUNT} expression frames, got {len(frames)}")
-    return frames
-
-
 def nod_sequence(primary_frame: Image.Image) -> list[Image.Image]:
     down = shifted_frame(primary_frame, 0, 7)
     frames = [
@@ -378,7 +312,7 @@ def wake_up_sequence(primary_frame: Image.Image) -> list[Image.Image]:
     frames = [
         *[lowered.copy() for _ in range(3)],
         *transition_frames(lowered, primary_frame, 7),
-        *blink_sequence(primary_frame),
+        *[primary_frame.copy() for _ in range(5)],
         *[primary_frame.copy() for _ in range(5)],
     ]
     if len(frames) != WAKE_UP_FRAME_COUNT:
@@ -432,8 +366,13 @@ def main() -> None:
     action_frames = split_grid(ACTION_STRIP_SOURCE, columns=4, rows=1)
     turn_frames = split_grid(TURNTABLE_STRIP_SOURCE, columns=8, rows=1)
 
-    for state in ["idle", "waiting", "review", "jumping", "failed"]:
-        write_state(state, [primary_frame.copy() for _ in range(10 if state != "jumping" else 8)])
+    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    for state_dir in OUTPUT_ROOT.iterdir():
+        if state_dir.is_dir() and state_dir.name not in RUNTIME_STATES:
+            shutil.rmtree(state_dir)
+
+    for state in ["idle", "waiting", "review", "failed"]:
+        write_state(state, [primary_frame.copy() for _ in range(10)])
 
     write_state("running", brief_action_sequence(primary_frame, action_frames[2]))
     write_state("waving", brief_action_sequence(primary_frame, action_frames[3]))
@@ -461,17 +400,6 @@ def main() -> None:
         "step-aside",
     ))
     write_state("posture-reset", posture_reset_sequence(primary_frame))
-    write_state("blink", blink_sequence(primary_frame))
-    write_state("slow-blink", slow_blink_sequence(primary_frame))
-    write_state("eye-shift-left", eye_shift_sequence(primary_frame, -4))
-    write_state("eye-shift-right", eye_shift_sequence(primary_frame, 4))
-    write_state("focus-tighten", expression_pulse_sequence(primary_frame, draw_brows(primary_frame)))
-    write_state("relax-face", expression_pulse_sequence(draw_brows(primary_frame), primary_frame))
-    write_state("small-smile", expression_pulse_sequence(primary_frame, draw_smile(primary_frame)))
-    write_state("tired-soften", expression_pulse_sequence(primary_frame, draw_eye_lines(primary_frame, (45, 30, 27, 135), width=2)))
-    write_state("curious-look", expression_pulse_sequence(primary_frame, draw_smile(draw_brows(primary_frame))))
-    write_state("hover-smile", expression_pulse_sequence(primary_frame, draw_smile(primary_frame)))
-    write_state("context-menu-attend", expression_pulse_sequence(primary_frame, draw_smile(draw_brows(primary_frame))))
     write_state("breathing", offset_sequence(
         primary_frame,
         [(0, 0), (0, -1), (0, -2), (0, -2), (0, -1), (0, 0), (0, 1), (0, 2), (0, 2), (0, 1), (0, 0), (0, 0)],
@@ -499,11 +427,9 @@ def main() -> None:
         "shoulder-relax",
     ))
     write_state("tiny-hand-adjust", micro_action_sequence(primary_frame, action_frames[1]))
-    write_state("drag-release-settle", nod_sequence(primary_frame)[:EXPRESSION_FRAME_COUNT])
+    write_state("drag-release-settle", nod_sequence(primary_frame)[:SHORT_FEEDBACK_FRAME_COUNT])
     write_state("wake-up", wake_up_sequence(primary_frame))
 
-    write_state("running-right", turntable_sequence(turn_frames))
-    write_state("running-left", turntable_sequence(list(reversed(turn_frames))))
     write_state("turning", turntable_sequence(turn_frames))
 
     manifest = OUTPUT_ROOT / "manifest.txt"
@@ -519,12 +445,9 @@ def main() -> None:
                 "motion=alpha-aware tweened transitions, no body scale, no upscale",
                 f"action_frame_count={ACTION_FRAME_COUNT}",
                 f"glance_frame_count={GLANCE_FRAME_COUNT}",
-                f"eye_shift_frame_count={EYE_SHIFT_FRAME_COUNT}",
                 f"micro_short_frame_count={MICRO_SHORT_FRAME_COUNT}",
                 f"micro_frame_count={MICRO_FRAME_COUNT}",
-                f"blink_frame_count={BLINK_FRAME_COUNT}",
-                f"slow_blink_frame_count={SLOW_BLINK_FRAME_COUNT}",
-                f"expression_frame_count={EXPRESSION_FRAME_COUNT}",
+                f"short_feedback_frame_count={SHORT_FEEDBACK_FRAME_COUNT}",
                 f"nod_frame_count={NOD_FRAME_COUNT}",
                 f"look_around_frame_count={LOOK_AROUND_FRAME_COUNT}",
                 f"large_action_frame_count={LARGE_ACTION_FRAME_COUNT}",

@@ -212,8 +212,9 @@ struct CodexActivityStatusTests {
         #expect(ambientPolicy.largeActionSuites(for: .working) == [[.glanceLeft], [.glanceRight], [.focusShift], [.fixPosture], [.postureReset]])
         #expect(ambientPolicy.largeActionSuites(for: .waiting) == [[.glanceLeft], [.glanceRight], [.adjustOutfit], [.lookAround]])
         #expect(ambientPolicy.smallActionSuites(for: .toolRunning) == [[.tapKeyboard], [.checkNotes], [.focusShift]])
-        #expect(ambientPolicy.hoverActionSuites(for: .working) == [[.focusTighten], [.adjustGlasses], [.thinking]])
-        #expect(ambientPolicy.hoverActionSuites(for: .waiting) == [[.cursorLook, .hoverSmile], [.waving]])
+        #expect(ambientPolicy.smallActionSuites(for: .waiting) == [[.cursorLook], [.waving]])
+        #expect(ambientPolicy.hoverActionSuites(for: .working) == [[.adjustGlasses], [.thinking]])
+        #expect(ambientPolicy.hoverActionSuites(for: .waiting) == [[.cursorLook], [.waving]])
         #expect(ambientPolicy.hoverActionSuites(for: .toolRunning) == [[.tapKeyboard], [.focusShift], [.checkNotes]])
         #expect(ambientPolicy.largeActionSuites(for: .longWorkTired) == [[.stretch], [.postureReset]])
     }

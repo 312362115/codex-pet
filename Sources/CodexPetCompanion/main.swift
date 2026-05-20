@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SpriteKit
 
 private enum PetRow: Int {
     case idle = 0
@@ -16,6 +17,7 @@ private enum PetRow: Int {
 private struct CompanionConfig {
     let petImagePath: String
     let highResolutionFrameRoot: String
+    let rigAssetRoot: String
     let codexAppPath: String
     let codexHome: String
     let displayWidth: CGFloat
@@ -28,8 +30,10 @@ private struct CompanionConfig {
         let resourcePath = Bundle.main.resourcePath ?? ""
         let bundledFrameRoot = "\(resourcePath)/lingxi-ol-hires"
         let bundledPetImagePath = "\(resourcePath)/lingxi-ol/spritesheet.webp"
+        let bundledRigAssetRoot = "\(resourcePath)/lingxi-ol-rig"
         let installedFrameRoot = "/Users/renlongyu/.codex/pet-companion/assets/lingxi-ol-hires"
         let installedPetImagePath = "/Users/renlongyu/.codex/pets/lingxi-ol/spritesheet.webp"
+        let installedRigAssetRoot = "/Users/renlongyu/.codex/pet-companion/assets/lingxi-ol-rig"
 
         return CompanionConfig(
             petImagePath: FileManager.default.fileExists(atPath: bundledPetImagePath)
@@ -38,6 +42,9 @@ private struct CompanionConfig {
             highResolutionFrameRoot: FileManager.default.fileExists(atPath: bundledFrameRoot)
                 ? bundledFrameRoot
                 : installedFrameRoot,
+            rigAssetRoot: FileManager.default.fileExists(atPath: bundledRigAssetRoot)
+                ? bundledRigAssetRoot
+                : installedRigAssetRoot,
             codexAppPath: "/Applications/Codex.app",
             codexHome: "\(NSHomeDirectory())/.codex",
             displayWidth: 576,
@@ -407,20 +414,10 @@ private final class PetFrameProvider {
             (.waiting, "waiting"),
             (.failed, "failed"),
             (.waving, "waving"),
-            (.jumping, "jumping"),
             (.review, "review"),
             (.turning, "turning"),
             (.glanceLeft, "glance-left"),
             (.glanceRight, "glance-right"),
-            (.blink, "blink"),
-            (.slowBlink, "slow-blink"),
-            (.eyeShiftLeft, "eye-shift-left"),
-            (.eyeShiftRight, "eye-shift-right"),
-            (.focusTighten, "focus-tighten"),
-            (.relaxFace, "relax-face"),
-            (.smallSmile, "small-smile"),
-            (.tiredSoften, "tired-soften"),
-            (.curiousLook, "curious-look"),
             (.breathing, "breathing"),
             (.hairSway, "hair-sway"),
             (.weightShift, "weight-shift"),
@@ -433,8 +430,6 @@ private final class PetFrameProvider {
             (.checkNotes, "check-notes"),
             (.stretchWrist, "stretch-wrist"),
             (.cursorLook, "cursor-look"),
-            (.hoverSmile, "hover-smile"),
-            (.contextMenuAttend, "context-menu-attend"),
             (.focusShift, "focus-shift"),
             (.fixPosture, "fix-posture"),
             (.adjustOutfit, "adjust-outfit"),
@@ -537,13 +532,239 @@ private final class SpriteSheet {
     }
 }
 
+private struct PetRigManifest: Decodable {
+    let canvas: PetRigCanvas
+    let parts: [PetRigPart]
+}
+
+private struct PetRigCanvas: Decodable {
+    let width: Double
+    let height: Double
+}
+
+private struct PetRigPart: Decodable {
+    let id: String
+    let image: String
+    let parent: String?
+    let position: PetRigPoint
+    let anchor: PetRigPoint
+    let zIndex: Double
+}
+
+private struct PetRigPoint: Decodable {
+    let x: Double
+    let y: Double
+}
+
+private final class PetRigProvider {
+    let rootPath: String
+    let manifest: PetRigManifest
+
+    init?(config: CompanionConfig) {
+        let manifestPath = "\(config.rigAssetRoot)/rig.json"
+        guard FileManager.default.fileExists(atPath: manifestPath),
+              let data = FileManager.default.contents(atPath: manifestPath),
+              let manifest = try? JSONDecoder().decode(PetRigManifest.self, from: data) else {
+            return nil
+        }
+
+        for part in manifest.parts {
+            guard FileManager.default.fileExists(atPath: "\(config.rigAssetRoot)/\(part.image)") else {
+                return nil
+            }
+        }
+
+        self.rootPath = config.rigAssetRoot
+        self.manifest = manifest
+    }
+
+    func image(for part: PetRigPart) -> NSImage? {
+        NSImage(contentsOfFile: "\(rootPath)/\(part.image)")
+    }
+}
+
+private final class PetRigScene: SKScene {
+    private let provider: PetRigProvider
+    private let rigNode = SKNode()
+    private var partNodes: [String: SKSpriteNode] = [:]
+    private var basePositions: [String: CGPoint] = [:]
+
+    init(provider: PetRigProvider) {
+        self.provider = provider
+        let canvas = provider.manifest.canvas
+        super.init(size: CGSize(width: canvas.width, height: canvas.height))
+        scaleMode = .aspectFit
+        backgroundColor = .clear
+        buildRig()
+        settle()
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func settle() {
+        removeAllActions()
+        rigNode.removeAllActions()
+        rigNode.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        rigNode.xScale = 1
+        rigNode.yScale = 1
+        rigNode.zRotation = 0
+
+        for (id, node) in partNodes {
+            node.removeAllActions()
+            node.position = basePositions[id] ?? node.position
+            node.xScale = 1
+            node.yScale = 1
+            node.zRotation = 0
+            node.alpha = 1
+        }
+    }
+
+    func canPlay(animation: PetAnimation) -> Bool {
+        switch animation {
+        case .breathing:
+            return true
+        case .idle, .running, .waiting, .failed, .waving, .jumping, .review, .turning, .glanceLeft, .glanceRight,
+             .blink, .slowBlink, .eyeShiftLeft, .eyeShiftRight, .focusTighten, .relaxFace, .smallSmile, .tiredSoften,
+             .curiousLook, .hairSway, .weightShift, .shoulderRelax, .tinyHandAdjust, .thinking, .adjustGlasses,
+             .nod, .tapKeyboard, .checkNotes, .stretchWrist, .cursorLook, .hoverSmile, .contextMenuAttend,
+             .focusShift, .fixPosture, .adjustOutfit, .lookAround, .stretch, .stepAside, .postureReset,
+             .dragReleaseSettle, .wakeUp:
+            return false
+        }
+    }
+
+    func play(animation: PetAnimation, duration: TimeInterval, completion: @escaping () -> Void) -> Bool {
+        guard canPlay(animation: animation) else {
+            return false
+        }
+
+        settle()
+        switch animation {
+        case .breathing:
+            playBreathing(duration: duration)
+        case .idle, .running, .waiting, .failed, .waving, .jumping, .review, .turning, .glanceLeft, .glanceRight,
+             .blink, .slowBlink, .eyeShiftLeft, .eyeShiftRight, .focusTighten, .relaxFace, .smallSmile, .tiredSoften,
+             .curiousLook, .hairSway, .weightShift, .shoulderRelax, .tinyHandAdjust, .thinking, .adjustGlasses,
+             .nod, .tapKeyboard, .checkNotes, .stretchWrist, .cursorLook, .hoverSmile, .contextMenuAttend,
+             .focusShift, .fixPosture, .adjustOutfit, .lookAround, .stretch, .stepAside, .postureReset,
+             .dragReleaseSettle, .wakeUp:
+            return false
+        }
+
+        run(.sequence([
+            .wait(forDuration: duration),
+            .run { [weak self] in
+                self?.settle()
+                completion()
+            }
+        ]))
+        return true
+    }
+
+    private func buildRig() {
+        addChild(rigNode)
+        rigNode.position = CGPoint(x: size.width / 2, y: size.height / 2)
+
+        let center = CGPoint(x: size.width / 2, y: size.height / 2)
+        for part in provider.manifest.parts.sorted(by: { $0.zIndex < $1.zIndex }) {
+            guard let image = provider.image(for: part) else {
+                continue
+            }
+            let texture = SKTexture(image: image)
+            let node = SKSpriteNode(texture: texture)
+            node.name = part.id
+            node.anchorPoint = CGPoint(x: part.anchor.x, y: part.anchor.y)
+            node.position = CGPoint(x: part.position.x - center.x, y: part.position.y - center.y)
+            node.zPosition = part.zIndex
+            rigNode.addChild(node)
+            partNodes[part.id] = node
+            basePositions[part.id] = node.position
+        }
+    }
+
+    private func playBreathing(duration: TimeInterval) {
+        let up = SKAction.group([
+            .scaleX(to: 1.002, y: 1.006, duration: duration * 0.5),
+            .moveBy(x: 0, y: 2, duration: duration * 0.5)
+        ])
+        let down = SKAction.group([
+            .scaleX(to: 1, y: 1, duration: duration * 0.5),
+            .moveBy(x: 0, y: -2, duration: duration * 0.5)
+        ])
+        up.timingMode = .easeInEaseOut
+        down.timingMode = .easeInEaseOut
+        rigNode.run(.sequence([up, down]))
+    }
+
+}
+
+private final class PetRigView: SKView {
+    private let rigScene: PetRigScene
+
+    init?(provider: PetRigProvider, frame: CGRect) {
+        self.rigScene = PetRigScene(provider: provider)
+        super.init(frame: frame)
+        allowsTransparency = true
+        ignoresSiblingOrder = true
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        presentScene(rigScene)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func supports(presentationState: PetPresentationState) -> Bool {
+        switch presentationState {
+        case .idleRelaxed, .waitingAttentive:
+            return true
+        case .offlineRest, .reviewFocused, .toolRunning, .blockedConcerned, .completedCalm, .longWorkTired:
+            return false
+        }
+    }
+
+    func settle(presentationState: PetPresentationState) -> Bool {
+        guard supports(presentationState: presentationState) else {
+            isHidden = true
+            return false
+        }
+
+        rigScene.settle()
+        isHidden = false
+        return true
+    }
+
+    func play(animation: PetAnimation, duration: TimeInterval, completion: @escaping () -> Void) -> Bool {
+        guard !isHidden else {
+            return false
+        }
+        return rigScene.play(animation: animation, duration: duration, completion: completion)
+    }
+
+    func stop() {
+        rigScene.settle()
+    }
+}
+
 private final class PetWindow: NSWindow {
     override var canBecomeKey: Bool { true }
+}
+
+private enum PetPlayback {
+    case frameClip
+    case rigMotion(duration: TimeInterval)
 }
 
 private final class PetView: NSView {
     private let frameProvider: PetFrameProvider
     private let config: CompanionConfig
+    private let renderModePolicy = PetRenderModePolicy()
+    private let timingPolicy = PetAnimationTimingPolicy()
+    private var rigView: PetRigView?
+    private var shouldDrawFrameClip = true
     private var presentationState: PetPresentationState = .waitingAttentive
     private var animation = PetAnimation.waiting
     private var frameIndex = 0
@@ -563,6 +784,17 @@ private final class PetView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
         postsFrameChangedNotifications = true
+
+        if let rigProvider = PetRigProvider(config: config),
+           let rigView = PetRigView(
+               provider: rigProvider,
+               frame: CGRect(x: 0, y: 48, width: config.displayWidth, height: config.displayHeight)
+           ) {
+            rigView.autoresizingMask = [.width, .height]
+            rigView.isHidden = true
+            addSubview(rigView)
+            self.rigView = rigView
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -575,9 +807,12 @@ private final class PetView: NSView {
             for: presentationState,
             frameCount: frameProvider.frameCount(for: restingAnimation)
         )
+        let rigSettled = rigView?.settle(presentationState: presentationState) ?? false
+        shouldDrawFrameClip = !rigSettled
         if self.presentationState != presentationState
             || self.animation != restingAnimation
-            || self.frameIndex != restingFrameIndex {
+            || self.frameIndex != restingFrameIndex
+            || rigSettled {
             self.presentationState = presentationState
             self.animation = restingAnimation
             self.frameIndex = restingFrameIndex
@@ -585,14 +820,32 @@ private final class PetView: NSView {
         }
     }
 
-    func play(animation: PetAnimation) {
+    func play(animation: PetAnimation) -> PetPlayback {
         self.animation = animation
         self.frameIndex = 0
+        if renderModePolicy.usesSpriteKitRig(animation),
+           rigView?.play(
+               animation: animation,
+               duration: timingPolicy.totalDuration(for: animation),
+               completion: {}
+           ) == true {
+            shouldDrawFrameClip = false
+            needsDisplay = true
+            return .rigMotion(duration: timingPolicy.totalDuration(for: animation))
+        }
+
+        rigView?.isHidden = true
+        shouldDrawFrameClip = true
         needsDisplay = true
+        return .frameClip
     }
 
     func frameCount(for animation: PetAnimation) -> Int {
         frameProvider.frameCount(for: animation)
+    }
+
+    func stopCurrentAnimation() {
+        rigView?.stop()
     }
 
     func advanceAnimationFrame() -> Bool {
@@ -644,7 +897,7 @@ private final class PetView: NSView {
             return
         }
 
-        if let frame = frameProvider.frame(animation: animation, index: frameIndex) {
+        if shouldDrawFrameClip, let frame = frameProvider.frame(animation: animation, index: frameIndex) {
             context.interpolationQuality = .high
             let imageBounds = CGRect(
                 x: 0,
@@ -994,18 +1247,26 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let animation = actionSuite[actionSuiteStep]
         actionSuiteStep += 1
-        petView.play(animation: animation)
+        let playback = petView.play(animation: animation)
         animationTimer?.invalidate()
-        let frameInterval = timingPolicy.frameInterval(for: animation, frameCount: petView.frameCount(for: animation))
-        animationTimer = Timer.scheduledTimer(withTimeInterval: frameInterval, repeats: true) { [weak self] timer in
-            guard let self, let petView = self.petView else {
-                timer.invalidate()
-                return
-            }
+        switch playback {
+        case .frameClip:
+            let frameInterval = timingPolicy.frameInterval(for: animation, frameCount: petView.frameCount(for: animation))
+            animationTimer = Timer.scheduledTimer(withTimeInterval: frameInterval, repeats: true) { [weak self] timer in
+                guard let self, let petView = self.petView else {
+                    timer.invalidate()
+                    return
+                }
 
-            if petView.advanceAnimationFrame() {
+                if petView.advanceAnimationFrame() {
+                    timer.invalidate()
+                    self.playNextActionSuiteStep()
+                }
+            }
+        case .rigMotion(let duration):
+            animationTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] timer in
                 timer.invalidate()
-                self.playNextActionSuiteStep()
+                self?.playNextActionSuiteStep()
             }
         }
     }
@@ -1088,6 +1349,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         largeActionTimer = nil
         animationTimer?.invalidate()
         animationTimer = nil
+        petView?.stopCurrentAnimation()
         actionSuite = []
         actionSuiteStep = 0
         activeSchedulerKind = nil
@@ -1145,7 +1407,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
         lastInteractionAt = Date()
         stopScheduledAndActiveActions()
-        requestActionSuite([.contextMenuAttend], kind: .interaction, sourcePresentationState: currentPresentationState)
+        if currentPresentationState == .offlineRest {
+            requestActionSuite([.failed], kind: .interaction, sourcePresentationState: currentPresentationState)
+        } else {
+            requestActionSuite([.cursorLook], kind: .interaction, sourcePresentationState: currentPresentationState)
+        }
     }
 
     private func beginDragging() {
@@ -1180,9 +1446,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         case (_, .waitingAttentive):
             return [.cursorLook]
         case (_, .blockedConcerned):
-            return [.tiredSoften]
+            return []
         case (_, .completedCalm):
-            return [.nod, .hoverSmile]
+            return [.nod]
         case (_, .longWorkTired):
             return [.stretchWrist]
         }

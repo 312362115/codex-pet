@@ -336,8 +336,8 @@ public struct PetActionCatalog: Sendable {
         PetActionDescriptor(animation: .stepAside, layer: .large, priority: .p4, allowedStatuses: [.waiting], expressions: [.neutral], cooldown: 180...300, canQueue: false),
         PetActionDescriptor(animation: .postureReset, layer: .large, priority: .p4, allowedStatuses: activeStatuses, expressions: [.neutral, .focused], cooldown: 90...180, canQueue: false),
         PetActionDescriptor(animation: .cursorLook, layer: .interaction, priority: .p1, allowedStatuses: activeStatuses, expressions: [.curious], cooldown: 2...5, canQueue: false),
-        PetActionDescriptor(animation: .hoverSmile, layer: .interaction, priority: .p1, allowedStatuses: activeStatuses, expressions: [.happy], cooldown: 2...5, canQueue: false),
-        PetActionDescriptor(animation: .contextMenuAttend, layer: .interaction, priority: .p1, allowedStatuses: allStatuses, expressions: [.curious], cooldown: 0...1, canQueue: false),
+        PetActionDescriptor(animation: .hoverSmile, layer: .interaction, priority: .p1, allowedStatuses: activeStatuses, expressions: [.happy], cooldown: 2...5, canQueue: false, defaultEligible: false),
+        PetActionDescriptor(animation: .contextMenuAttend, layer: .interaction, priority: .p1, allowedStatuses: allStatuses, expressions: [.curious], cooldown: 0...1, canQueue: false, defaultEligible: false),
         PetActionDescriptor(animation: .dragReleaseSettle, layer: .interaction, priority: .p0, allowedStatuses: allStatuses, expressions: [.neutral], cooldown: 0...1, canQueue: false),
         PetActionDescriptor(animation: .wakeUp, layer: .interaction, priority: .p1, allowedStatuses: [.waiting], expressions: [.neutral, .curious], cooldown: 0...1, canQueue: false),
         PetActionDescriptor(animation: .turning, layer: .debug, priority: .p4, allowedStatuses: activeStatuses, expressions: [.neutral], cooldown: 0...0, canQueue: false, defaultEligible: false),
@@ -730,6 +730,33 @@ public struct PetMotionPolicy {
     }
 }
 
+public enum PetRenderMode: Hashable, Sendable {
+    case frameClip
+    case spriteKitRigMotion
+}
+
+public struct PetRenderModePolicy {
+    public init() {}
+
+    public func renderMode(for animation: PetAnimation) -> PetRenderMode {
+        switch animation {
+        case .breathing:
+            return .spriteKitRigMotion
+        case .idle, .running, .waiting, .failed, .waving, .jumping, .review, .turning, .glanceLeft, .glanceRight,
+             .blink, .slowBlink, .eyeShiftLeft, .eyeShiftRight, .focusTighten, .relaxFace, .smallSmile, .tiredSoften,
+             .curiousLook, .hairSway, .weightShift, .shoulderRelax, .tinyHandAdjust, .thinking, .adjustGlasses,
+             .nod, .tapKeyboard, .checkNotes, .stretchWrist, .cursorLook, .hoverSmile, .contextMenuAttend,
+             .focusShift, .fixPosture, .adjustOutfit, .lookAround, .stretch, .stepAside, .postureReset,
+             .dragReleaseSettle, .wakeUp:
+            return .frameClip
+        }
+    }
+
+    public func usesSpriteKitRig(_ animation: PetAnimation) -> Bool {
+        renderMode(for: animation) == .spriteKitRigMotion
+    }
+}
+
 public struct PetAmbientActionPolicy {
     public init() {}
 
@@ -822,7 +849,7 @@ public struct PetAmbientActionPolicy {
         case .idleRelaxed:
             return [[.waving]]
         case .waitingAttentive:
-            return [[.cursorLook], [.waving], [.hoverSmile]]
+            return [[.cursorLook], [.waving]]
         case .reviewFocused:
             return [[.adjustGlasses], [.thinking], [.nod], [.checkNotes]]
         case .toolRunning:
@@ -830,7 +857,7 @@ public struct PetAmbientActionPolicy {
         case .blockedConcerned:
             return [[.glanceLeft], [.glanceRight], [.shoulderRelax]]
         case .completedCalm:
-            return [[.nod], [.hoverSmile], [.shoulderRelax]]
+            return [[.nod], [.shoulderRelax]]
         case .longWorkTired:
             return [[.stretchWrist], [.shoulderRelax], [.fixPosture]]
         }
@@ -872,15 +899,15 @@ public struct PetAmbientActionPolicy {
         case .idleRelaxed:
             return [[.wakeUp], [.waving], [.lookAround]]
         case .waitingAttentive:
-            return [[.cursorLook, .hoverSmile], [.waving]]
+            return [[.cursorLook], [.waving]]
         case .reviewFocused:
-            return [[.focusTighten], [.adjustGlasses], [.thinking]]
+            return [[.adjustGlasses], [.thinking]]
         case .toolRunning:
             return [[.tapKeyboard], [.focusShift], [.checkNotes]]
         case .blockedConcerned:
-            return [[.tiredSoften], [.glanceLeft, .glanceRight]]
+            return [[.glanceLeft, .glanceRight]]
         case .completedCalm:
-            return [[.hoverSmile], [.nod], [.shoulderRelax]]
+            return [[.nod], [.shoulderRelax]]
         case .longWorkTired:
             return [[.stretchWrist], [.shoulderRelax], [.fixPosture]]
         }
