@@ -9,6 +9,10 @@ CACHE_DIR="$ROOT/.clang-cache"
 
 mkdir -p "$BIN_DIR" "$APP_DIR/Contents/Resources" "$CACHE_DIR"
 
+if [ -d "$ROOT/assets/lingxi-ol-rig" ]; then
+  "$ROOT/scripts/validate-rig-assets.py"
+fi
+
 copy_resource_dir() {
   local source_dir="$1"
   local target_dir="$2"

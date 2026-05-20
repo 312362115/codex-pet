@@ -169,7 +169,12 @@ struct StatusTestRunner {
         expect(timingPolicy.totalDuration(for: .slowBlink) == 0.7, "slow blink should stay readable")
         expect(timingPolicy.totalDuration(for: .eyeShiftLeft) == 0.8, "eye shifts should stay quick")
         expect(timingPolicy.totalDuration(for: .breathing) == 1.2, "breathing should stay subtle")
+        expect(timingPolicy.totalDuration(for: .hairSway) == 1.2, "hair sway proxy should stay subtle")
         expect(timingPolicy.totalDuration(for: .weightShift) == 1.6, "micro shifts should stay short")
+        expect(timingPolicy.totalDuration(for: .shoulderRelax) == 1.6, "shoulder relax should stay short")
+        expect(timingPolicy.totalDuration(for: .cursorLook) == 1.6, "cursor look should stay short")
+        expect(timingPolicy.totalDuration(for: .dragReleaseSettle) == 1.0, "drag release settle should be a quick recovery")
+        expect(timingPolicy.totalDuration(for: .wakeUp) == 2.0, "wake up should be readable but not slow")
         expect(timingPolicy.totalDuration(for: .tapKeyboard) == 2.4, "small work gestures should use short-action duration")
         expect(timingPolicy.totalDuration(for: .lookAround) == 3.2, "look around should be slower than a short glance")
         expect(timingPolicy.totalDuration(for: .stretch) == 3.6, "large body gestures should be slow enough to read")
@@ -186,18 +191,29 @@ struct StatusTestRunner {
 
         let renderModePolicy = PetRenderModePolicy()
         expect(renderModePolicy.renderMode(for: .breathing) == .spriteKitRigMotion, "breathing should use the SpriteKit rig")
-        expect(renderModePolicy.renderMode(for: .hairSway) == .frameClip, "hair sway should use PNG until hair rig assets are clean")
-        expect(renderModePolicy.renderMode(for: .blink) == .frameClip, "blink should use PNG until face rig assets are clean")
-        expect(renderModePolicy.renderMode(for: .slowBlink) == .frameClip, "slow blink should use PNG until face rig assets are clean")
+        expect(renderModePolicy.renderMode(for: .weightShift) == .spriteKitRigMotion, "weight shift should use the SpriteKit rig body layer")
+        expect(renderModePolicy.renderMode(for: .shoulderRelax) == .spriteKitRigMotion, "shoulder relax should use the SpriteKit rig body layer")
+        expect(renderModePolicy.renderMode(for: .hairSway) == .spriteKitRigMotion, "hair sway should use the SpriteKit head proxy until hair parts are clean")
+        expect(renderModePolicy.renderMode(for: .blink) == .frameClip, "blink should not use rig until it is regenerated as an integrated full-action expression")
+        expect(renderModePolicy.renderMode(for: .slowBlink) == .frameClip, "slow blink should not use rig until it is regenerated as an integrated full-action expression")
         expect(renderModePolicy.renderMode(for: .eyeShiftLeft) == .frameClip, "left eye shift should use PNG until face rig assets are clean")
         expect(renderModePolicy.renderMode(for: .eyeShiftRight) == .frameClip, "right eye shift should use PNG until face rig assets are clean")
-        expect(renderModePolicy.renderMode(for: .cursorLook) == .frameClip, "cursor look should use PNG until face rig assets are clean")
+        expect(renderModePolicy.renderMode(for: .cursorLook) == .spriteKitRigMotion, "cursor look should use the SpriteKit head layer")
+        expect(renderModePolicy.renderMode(for: .dragReleaseSettle) == .spriteKitRigMotion, "drag release settle should use the SpriteKit body layer")
+        expect(renderModePolicy.renderMode(for: .wakeUp) == .spriteKitRigMotion, "wake up should use the SpriteKit body layer")
         expect(renderModePolicy.renderMode(for: .waving) == .frameClip, "waving should remain a PNG frame clip")
         expect(renderModePolicy.renderMode(for: .turning) == .frameClip, "turning should remain a PNG frame clip")
         expect(renderModePolicy.renderMode(for: .tapKeyboard) == .frameClip, "tap keyboard should remain a PNG frame clip")
         expect(renderModePolicy.renderMode(for: .stretch) == .frameClip, "stretch should remain a PNG frame clip")
         expect(renderModePolicy.usesSpriteKitRig(.breathing), "breathing should report rig usage")
-        expect(!renderModePolicy.usesSpriteKitRig(.hairSway), "hair sway should not report rig usage until assets are clean")
+        expect(!renderModePolicy.usesSpriteKitRig(.blink), "blink should not report rig usage")
+        expect(!renderModePolicy.usesSpriteKitRig(.slowBlink), "slow blink should not report rig usage")
+        expect(renderModePolicy.usesSpriteKitRig(.weightShift), "weight shift should report rig usage")
+        expect(renderModePolicy.usesSpriteKitRig(.shoulderRelax), "shoulder relax should report rig usage")
+        expect(renderModePolicy.usesSpriteKitRig(.cursorLook), "cursor look should report rig usage")
+        expect(renderModePolicy.usesSpriteKitRig(.hairSway), "hair sway should report rig usage as a head proxy")
+        expect(renderModePolicy.usesSpriteKitRig(.dragReleaseSettle), "drag release settle should report rig usage")
+        expect(renderModePolicy.usesSpriteKitRig(.wakeUp), "wake up should report rig usage")
         expect(!renderModePolicy.usesSpriteKitRig(.waving), "waving should not report rig usage")
 
         let ambientPolicy = PetAmbientActionPolicy()
@@ -211,12 +227,17 @@ struct StatusTestRunner {
         expect(ambientPolicy.restingFrameIndex(for: .toolRunning, frameCount: 24) > 0, "tool-running should settle on a readable in-action frame")
         expect(ambientPolicy.restingFrameIndex(for: .completedCalm, frameCount: 16) > 0, "completed should settle on a readable completion frame")
         expect(ambientPolicy.microActionSuites(for: .working) == [[.breathing], [.tinyHandAdjust], [.hairSway]], "working should include subtle non-face micro action suites")
-        expect(ambientPolicy.microActionSuites(for: .waiting) == [[.breathing], [.tinyHandAdjust], [.hairSway]], "waiting should include attentive micro action suites")
+        expect(
+            ambientPolicy.microActionSuites(for: .waiting) == [[.breathing], [.weightShift], [.shoulderRelax], [.tinyHandAdjust], [.hairSway]],
+            "waiting should include attentive rig-backed micro action suites"
+        )
         expect(ambientPolicy.microActionSuites(for: .idleRelaxed).contains([.weightShift]), "idle relaxed should keep idle weight shifts")
         expect(ambientPolicy.ambientSuites(for: .working) == [[.adjustGlasses], [.thinking], [.nod], [.checkNotes]], "working should use focused short action suites")
-        expect(ambientPolicy.ambientSuites(for: .waiting) == [[.cursorLook], [.waving]], "waiting should use attentive action clips without legacy face-overlay clips")
+        expect(ambientPolicy.ambientSuites(for: .waiting) == [[.cursorLook], [.waving], [.nod], [.tinyHandAdjust], [.adjustOutfit]], "waiting should rotate more visible action clips without legacy face-overlay clips")
         expect(ambientPolicy.ambientSuites(for: .offline) == [], "offline should rest without extra ambient actions")
+        expect(ambientPolicy.smallActionSuites(for: .idleRelaxed) == [[.waving], [.nod], [.cursorLook], [.tinyHandAdjust]], "idle relaxed should not be limited to one repeated wave")
         expect(ambientPolicy.ambientAnimations(for: .waiting).contains(.waving), "waiting should include visible short actions")
+        expect(ambientPolicy.ambientAnimations(for: .waiting).contains(.adjustOutfit), "waiting should expose more generated action frames in normal runtime")
         expect(!ambientPolicy.ambientAnimations(for: .waiting).contains(.turning), "waiting should avoid inconsistent turntable frames")
         expect(!ambientPolicy.largeActionSuites(for: .working).flatMap { $0 }.contains(.turning), "working should avoid full turntable in default large actions")
         expect(!ambientPolicy.largeActionSuites(for: .waiting).flatMap { $0 }.contains(.turning), "waiting should avoid full turntable in default large actions")
@@ -231,9 +252,28 @@ struct StatusTestRunner {
         expect(ambientPolicy.smallActionSuites(for: .blockedConcerned).contains([.shoulderRelax]), "blocked should use low-energy recovery actions")
         expect(ambientPolicy.largeActionSuites(for: .longWorkTired) == [[.stretch], [.postureReset]], "long work should use rest-oriented large actions")
 
+        let schedulerIntervalPolicy = PetActionSchedulerIntervalPolicy()
+        expect(
+            schedulerIntervalPolicy.microActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(5, 9),
+            "initial micro actions should become visible quickly"
+        )
+        expect(
+            schedulerIntervalPolicy.smallActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(8, 14),
+            "initial small actions should not wait half a minute"
+        )
+        expect(
+            schedulerIntervalPolicy.largeActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(24, 38),
+            "initial large actions should be discoverable in the first minute"
+        )
+        expect(
+            schedulerIntervalPolicy.largeActionIntervalRange(for: .idleRelaxed, initialDelay: false) == PetSchedulerIntervalRange(60, 110),
+            "idle large actions should recur often enough to be noticed"
+        )
+
         let catalog = PetActionCatalog()
         expect(catalog.descriptor(for: .blink)?.layer == .expression, "blink should remain a legacy expression descriptor")
-        expect(catalog.descriptor(for: .blink)?.defaultEligible == false, "legacy expression clips should not be scheduled independently")
+        expect(catalog.descriptor(for: .blink)?.defaultEligible == false, "blink should not be scheduled separately from full action frames")
+        expect(catalog.descriptor(for: .slowBlink)?.defaultEligible == false, "slow blink should not be scheduled separately from full action frames")
         expect(catalog.descriptor(for: .breathing)?.layer == .micro, "breathing should be a micro action")
         expect(catalog.descriptor(for: .adjustGlasses)?.layer == .small, "adjust glasses should be a small action")
         expect(catalog.descriptor(for: .focusShift)?.layer == .medium, "focus shift should be a medium action")
@@ -243,12 +283,51 @@ struct StatusTestRunner {
         expect(catalog.descriptor(for: .hoverSmile)?.defaultEligible == false, "legacy hover smile clip should not be scheduled by default")
         expect(catalog.descriptor(for: .contextMenuAttend)?.defaultEligible == false, "legacy context menu face clip should not be scheduled by default")
         expect(catalog.descriptor(for: .turning)?.layer == .debug, "full turntable should only be a debug action")
+        let disabledFaceOverlayActions: [PetAnimation] = [
+            .blink, .slowBlink, .eyeShiftLeft, .eyeShiftRight, .focusTighten,
+            .relaxFace, .smallSmile, .tiredSoften, .curiousLook, .hoverSmile, .contextMenuAttend
+        ]
+        for animation in disabledFaceOverlayActions {
+            expect(catalog.descriptor(for: animation)?.defaultEligible == false, "\(animation.rawValue) should not be scheduled by default")
+            expect(renderModePolicy.renderMode(for: animation) == .frameClip, "\(animation.rawValue) should not use rig until clean face assets exist")
+        }
         expect(catalog.animations(for: .working, layer: .micro).contains(.breathing), "working micro actions should include breathing")
         expect(catalog.animations(for: .waiting, layer: .micro).contains(.tinyHandAdjust), "waiting micro actions should include tiny hand adjustment")
         expect(catalog.animations(for: .working, layer: .small) == [.adjustGlasses, .thinking, .nod, .tapKeyboard, .checkNotes, .stretchWrist], "working small actions should express focused work")
-        expect(catalog.animations(for: .waiting, layer: .expression).isEmpty, "standalone expression actions should not be scheduled by default")
+        expect(catalog.animations(for: .waiting, layer: .expression).isEmpty, "waiting should not schedule separate expression overlays")
+        expect(catalog.animations(for: .working, layer: .expression).isEmpty, "working should not schedule separate expression overlays")
+        expect(catalog.animations(for: .offline, layer: .expression).isEmpty, "offline should not schedule separate expression overlays")
+        let defaultScheduledActions = [
+            CodexActivityStatus.offline, .working, .waiting
+        ].flatMap { status in
+            [
+                catalog.animations(for: status, layer: .pose),
+                catalog.animations(for: status, layer: .micro),
+                catalog.animations(for: status, layer: .small),
+                catalog.animations(for: status, layer: .medium),
+                catalog.animations(for: status, layer: .large),
+                catalog.animations(for: status, layer: .interaction)
+            ].flatMap { $0 }
+        }
+        for animation in defaultScheduledActions {
+            expect(catalog.descriptor(for: animation)?.expressions.isEmpty == false, "\(animation.rawValue) should carry baked expression intent")
+        }
         expect(catalog.animations(for: .waiting, layer: .large).contains(.stepAside), "waiting large action catalog should include step aside")
         expect(!catalog.animations(for: .waiting, layer: .large).contains(.turning), "default large action catalog should exclude full turntable")
+
+        let windowPlacementPolicy = PetWindowPlacementPolicy()
+        let defaultOrigin = windowPlacementPolicy.initialOrigin(
+            visibleFrame: PetWindowPlacementRect(x: 0, y: 0, width: 1440, height: 900),
+            windowSize: PetWindowPlacementSize(width: 576, height: 672)
+        )
+        expect(defaultOrigin.x == 24, "default window should start near the left edge")
+        expect(defaultOrigin.y == 24, "default window should start near the bottom edge")
+        let offsetScreenOrigin = windowPlacementPolicy.initialOrigin(
+            visibleFrame: PetWindowPlacementRect(x: 100, y: 40, width: 1440, height: 900),
+            windowSize: PetWindowPlacementSize(width: 576, height: 672)
+        )
+        expect(offsetScreenOrigin.x == 124, "default window should use visible frame left edge on offset screens")
+        expect(offsetScreenOrigin.y == 64, "default window should use visible frame bottom edge on offset screens")
 
         let timeline = PetActionTimeline()
         let busyState = PetActionTimelineState(
@@ -306,7 +385,7 @@ struct StatusTestRunner {
             lastInteractionAt: now
         )
         let blockedDuringDrag = timeline.decide(
-            request: PetActionRequest(animation: .blink, sourcePresentationState: .waitingAttentive, submittedAt: now),
+            request: PetActionRequest(animation: .shoulderRelax, sourcePresentationState: .waitingAttentive, submittedAt: now),
             state: draggingState
         )
         expect(blockedDuringDrag.outcome == .drop, "drag should suppress non-P0 actions")

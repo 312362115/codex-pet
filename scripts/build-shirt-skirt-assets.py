@@ -32,6 +32,7 @@ WAKE_UP_FRAME_COUNT = 20
 ACTION_STRIP_SOURCE = REFERENCE_ROOT / "action-strip-shirt-skirt-consistent.png"
 TURNTABLE_STRIP_SOURCE = REFERENCE_ROOT / "turntable-strip-shirt-skirt-consistent.png"
 PRIMARY_SOURCE = REFERENCE_ROOT / "base-shirt-skirt-hires.png"
+EXPRESSION_STRIP_SOURCE = REFERENCE_ROOT / "expression-keyframes-v1.png"
 RUNTIME_STATES = {
     "adjust-glasses",
     "adjust-outfit",
@@ -308,12 +309,10 @@ def look_around_sequence(primary_frame: Image.Image, left_frame: Image.Image, ri
 
 
 def wake_up_sequence(primary_frame: Image.Image) -> list[Image.Image]:
-    lowered = shifted_frame(primary_frame, 0, 10)
+    offsets = [(0, 10), (0, 10), (0, 8), (0, 7), (0, 6), (0, 4), (0, 3), (0, 2), (0, 1), (0, 0)]
     frames = [
-        *[lowered.copy() for _ in range(3)],
-        *transition_frames(lowered, primary_frame, 7),
-        *[primary_frame.copy() for _ in range(5)],
-        *[primary_frame.copy() for _ in range(5)],
+        *[shifted_frame(primary_frame, offset_x, offset_y) for offset_x, offset_y in offsets],
+        *[primary_frame.copy() for _ in range(10)],
     ]
     if len(frames) != WAKE_UP_FRAME_COUNT:
         raise AssertionError(f"Expected {WAKE_UP_FRAME_COUNT} wake-up frames, got {len(frames)}")
@@ -365,14 +364,25 @@ def main() -> None:
     primary_frame = load_single_frame(PRIMARY_SOURCE)
     action_frames = split_grid(ACTION_STRIP_SOURCE, columns=4, rows=1)
     turn_frames = split_grid(TURNTABLE_STRIP_SOURCE, columns=8, rows=1)
+    expression_frames = split_grid(EXPRESSION_STRIP_SOURCE, columns=6, rows=1)
+    (
+        failed_concerned_frame,
+        review_focused_frame,
+        waiting_expectant_frame,
+        completed_soft_smile_frame,
+        tired_soft_frame,
+        wake_up_clear_frame,
+    ) = expression_frames
 
     OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
     for state_dir in OUTPUT_ROOT.iterdir():
         if state_dir.is_dir() and state_dir.name not in RUNTIME_STATES:
             shutil.rmtree(state_dir)
 
-    for state in ["idle", "waiting", "review", "failed"]:
-        write_state(state, [primary_frame.copy() for _ in range(10)])
+    write_state("idle", [primary_frame.copy() for _ in range(10)])
+    write_state("waiting", [waiting_expectant_frame.copy() for _ in range(10)])
+    write_state("review", [review_focused_frame.copy() for _ in range(10)])
+    write_state("failed", [failed_concerned_frame.copy() for _ in range(10)])
 
     write_state("running", brief_action_sequence(primary_frame, action_frames[2]))
     write_state("waving", brief_action_sequence(primary_frame, action_frames[3]))
@@ -381,7 +391,7 @@ def main() -> None:
     write_state("tap-keyboard", brief_action_sequence(primary_frame, action_frames[2]))
     write_state("check-notes", brief_action_sequence(primary_frame, action_frames[1]))
     write_state("stretch-wrist", brief_action_sequence(primary_frame, action_frames[3]))
-    write_state("nod", nod_sequence(primary_frame))
+    write_state("nod", nod_sequence(completed_soft_smile_frame))
     write_state("glance-left", glance_sequence(primary_frame, turn_frames[1]))
     write_state("glance-right", glance_sequence(primary_frame, turn_frames[-1]))
     write_state("cursor-look", glance_sequence(primary_frame, turn_frames[-1]))
@@ -428,7 +438,7 @@ def main() -> None:
     ))
     write_state("tiny-hand-adjust", micro_action_sequence(primary_frame, action_frames[1]))
     write_state("drag-release-settle", nod_sequence(primary_frame)[:SHORT_FEEDBACK_FRAME_COUNT])
-    write_state("wake-up", wake_up_sequence(primary_frame))
+    write_state("wake-up", wake_up_sequence(wake_up_clear_frame))
 
     write_state("turning", turntable_sequence(turn_frames))
 
@@ -439,6 +449,7 @@ def main() -> None:
                 "source=assets/reference/generated/base-shirt-skirt-hires.png",
                 "source=assets/reference/generated/action-strip-shirt-skirt-consistent.png",
                 "source=assets/reference/generated/turntable-strip-shirt-skirt-consistent.png",
+                "source=assets/reference/generated/expression-keyframes-v1.png",
                 "display_size=576x624",
                 f"max_body_height={MAX_BODY_HEIGHT}",
                 f"max_upscale={MAX_UPSCALE}",

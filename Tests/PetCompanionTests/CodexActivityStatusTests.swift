@@ -186,7 +186,12 @@ struct CodexActivityStatusTests {
         #expect(timingPolicy.totalDuration(for: .slowBlink) == 0.7)
         #expect(timingPolicy.totalDuration(for: .eyeShiftLeft) == 0.8)
         #expect(timingPolicy.totalDuration(for: .breathing) == 1.2)
+        #expect(timingPolicy.totalDuration(for: .hairSway) == 1.2)
         #expect(timingPolicy.totalDuration(for: .weightShift) == 1.6)
+        #expect(timingPolicy.totalDuration(for: .shoulderRelax) == 1.6)
+        #expect(timingPolicy.totalDuration(for: .cursorLook) == 1.6)
+        #expect(timingPolicy.totalDuration(for: .dragReleaseSettle) == 1.0)
+        #expect(timingPolicy.totalDuration(for: .wakeUp) == 2.0)
         #expect(timingPolicy.totalDuration(for: .tapKeyboard) == 2.4)
         #expect(timingPolicy.totalDuration(for: .lookAround) == 3.2)
         #expect(timingPolicy.totalDuration(for: .stretch) == 3.6)
@@ -194,6 +199,21 @@ struct CodexActivityStatusTests {
         #expect(abs(timingPolicy.frameInterval(for: .turning, frameCount: 25) - 0.1296) < 0.0001)
         #expect(abs(timingPolicy.frameInterval(for: .glanceLeft, frameCount: 16) - 0.1) < 0.0001)
         #expect(abs(timingPolicy.frameInterval(for: .glanceRight, frameCount: 16) - 0.1) < 0.0001)
+    }
+
+    @Test("Safe body micro motions use SpriteKit rig")
+    func safeBodyMicroMotionsUseSpriteKitRig() {
+        let renderModePolicy = PetRenderModePolicy()
+
+        #expect(renderModePolicy.renderMode(for: .breathing) == .spriteKitRigMotion)
+        #expect(renderModePolicy.renderMode(for: .blink) == .frameClip)
+        #expect(renderModePolicy.renderMode(for: .slowBlink) == .frameClip)
+        #expect(renderModePolicy.renderMode(for: .weightShift) == .spriteKitRigMotion)
+        #expect(renderModePolicy.renderMode(for: .shoulderRelax) == .spriteKitRigMotion)
+        #expect(renderModePolicy.renderMode(for: .cursorLook) == .spriteKitRigMotion)
+        #expect(renderModePolicy.renderMode(for: .hairSway) == .spriteKitRigMotion)
+        #expect(renderModePolicy.renderMode(for: .dragReleaseSettle) == .spriteKitRigMotion)
+        #expect(renderModePolicy.renderMode(for: .wakeUp) == .spriteKitRigMotion)
     }
 
     @Test("Default large ambient actions use glance clips")
@@ -207,16 +227,27 @@ struct CodexActivityStatusTests {
         #expect(ambientPolicy.restingFrameIndex(for: .toolRunning, frameCount: 24) > 0)
         #expect(ambientPolicy.restingFrameIndex(for: .completedCalm, frameCount: 16) > 0)
         #expect(ambientPolicy.microActionSuites(for: .working) == [[.breathing], [.tinyHandAdjust], [.hairSway]])
-        #expect(ambientPolicy.microActionSuites(for: .waiting) == [[.breathing], [.tinyHandAdjust], [.hairSway]])
+        #expect(ambientPolicy.microActionSuites(for: .waiting) == [[.breathing], [.weightShift], [.shoulderRelax], [.tinyHandAdjust], [.hairSway]])
         #expect(ambientPolicy.microActionSuites(for: .idleRelaxed).contains([.weightShift]))
         #expect(ambientPolicy.largeActionSuites(for: .working) == [[.glanceLeft], [.glanceRight], [.focusShift], [.fixPosture], [.postureReset]])
         #expect(ambientPolicy.largeActionSuites(for: .waiting) == [[.glanceLeft], [.glanceRight], [.adjustOutfit], [.lookAround]])
         #expect(ambientPolicy.smallActionSuites(for: .toolRunning) == [[.tapKeyboard], [.checkNotes], [.focusShift]])
-        #expect(ambientPolicy.smallActionSuites(for: .waiting) == [[.cursorLook], [.waving]])
+        #expect(ambientPolicy.smallActionSuites(for: .waiting) == [[.cursorLook], [.waving], [.nod], [.tinyHandAdjust], [.adjustOutfit]])
+        #expect(ambientPolicy.smallActionSuites(for: .idleRelaxed) == [[.waving], [.nod], [.cursorLook], [.tinyHandAdjust]])
         #expect(ambientPolicy.hoverActionSuites(for: .working) == [[.adjustGlasses], [.thinking]])
         #expect(ambientPolicy.hoverActionSuites(for: .waiting) == [[.cursorLook], [.waving]])
         #expect(ambientPolicy.hoverActionSuites(for: .toolRunning) == [[.tapKeyboard], [.focusShift], [.checkNotes]])
         #expect(ambientPolicy.largeActionSuites(for: .longWorkTired) == [[.stretch], [.postureReset]])
+    }
+
+    @Test("Scheduler intervals surface more generated actions")
+    func schedulerIntervalsSurfaceMoreGeneratedActions() {
+        let schedulerIntervalPolicy = PetActionSchedulerIntervalPolicy()
+
+        #expect(schedulerIntervalPolicy.microActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(5, 9))
+        #expect(schedulerIntervalPolicy.smallActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(8, 14))
+        #expect(schedulerIntervalPolicy.largeActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(24, 38))
+        #expect(schedulerIntervalPolicy.largeActionIntervalRange(for: .idleRelaxed, initialDelay: false) == PetSchedulerIntervalRange(60, 110))
     }
 
     @Test("Action catalog classifies action layers")
@@ -224,6 +255,8 @@ struct CodexActivityStatusTests {
         let catalog = PetActionCatalog()
 
         #expect(catalog.descriptor(for: .blink)?.layer == .expression)
+        #expect(catalog.descriptor(for: .blink)?.defaultEligible == false)
+        #expect(catalog.descriptor(for: .slowBlink)?.defaultEligible == false)
         #expect(catalog.descriptor(for: .breathing)?.layer == .micro)
         #expect(catalog.descriptor(for: .adjustGlasses)?.layer == .small)
         #expect(catalog.descriptor(for: .focusShift)?.layer == .medium)
@@ -235,8 +268,45 @@ struct CodexActivityStatusTests {
         #expect(catalog.animations(for: .waiting, layer: .micro).contains(.tinyHandAdjust))
         #expect(catalog.animations(for: .working, layer: .small) == [.adjustGlasses, .thinking, .nod, .tapKeyboard, .checkNotes, .stretchWrist])
         #expect(catalog.animations(for: .waiting, layer: .expression).isEmpty)
+        #expect(catalog.animations(for: .working, layer: .expression).isEmpty)
+        #expect(catalog.animations(for: .offline, layer: .expression).isEmpty)
         #expect(catalog.animations(for: .waiting, layer: .large).contains(.stepAside))
         #expect(!catalog.animations(for: .waiting, layer: .large).contains(.turning))
+
+        let disabledFaceOverlayActions: [PetAnimation] = [
+            .blink, .slowBlink, .eyeShiftLeft, .eyeShiftRight, .focusTighten,
+            .relaxFace, .smallSmile, .tiredSoften, .curiousLook, .hoverSmile, .contextMenuAttend
+        ]
+        for animation in disabledFaceOverlayActions {
+            #expect(catalog.descriptor(for: animation)?.defaultEligible == false)
+        }
+
+        let defaultScheduledActions = [
+            CodexActivityStatus.offline, .working, .waiting
+        ].flatMap { status in
+            [
+                catalog.animations(for: status, layer: .pose),
+                catalog.animations(for: status, layer: .micro),
+                catalog.animations(for: status, layer: .small),
+                catalog.animations(for: status, layer: .medium),
+                catalog.animations(for: status, layer: .large),
+                catalog.animations(for: status, layer: .interaction)
+            ].flatMap { $0 }
+        }
+        for animation in defaultScheduledActions {
+            #expect(catalog.descriptor(for: animation)?.expressions.isEmpty == false)
+        }
+    }
+
+    @Test("Default window placement starts at bottom left")
+    func defaultWindowPlacementStartsAtBottomLeft() {
+        let windowPlacementPolicy = PetWindowPlacementPolicy()
+        let origin = windowPlacementPolicy.initialOrigin(
+            visibleFrame: PetWindowPlacementRect(x: 100, y: 40, width: 1440, height: 900),
+            windowSize: PetWindowPlacementSize(width: 576, height: 672)
+        )
+
+        #expect(origin == PetWindowPlacementPoint(x: 124, y: 64))
     }
 
     @Test("Action timeline resolves conflicts")

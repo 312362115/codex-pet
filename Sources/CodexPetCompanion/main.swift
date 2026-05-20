@@ -623,14 +623,13 @@ private final class PetRigScene: SKScene {
 
     func canPlay(animation: PetAnimation) -> Bool {
         switch animation {
-        case .breathing:
+        case .breathing, .hairSway, .weightShift, .shoulderRelax, .cursorLook, .dragReleaseSettle, .wakeUp:
             return true
         case .idle, .running, .waiting, .failed, .waving, .jumping, .review, .turning, .glanceLeft, .glanceRight,
              .blink, .slowBlink, .eyeShiftLeft, .eyeShiftRight, .focusTighten, .relaxFace, .smallSmile, .tiredSoften,
-             .curiousLook, .hairSway, .weightShift, .shoulderRelax, .tinyHandAdjust, .thinking, .adjustGlasses,
-             .nod, .tapKeyboard, .checkNotes, .stretchWrist, .cursorLook, .hoverSmile, .contextMenuAttend,
-             .focusShift, .fixPosture, .adjustOutfit, .lookAround, .stretch, .stepAside, .postureReset,
-             .dragReleaseSettle, .wakeUp:
+             .curiousLook, .tinyHandAdjust, .thinking, .adjustGlasses,
+             .nod, .tapKeyboard, .checkNotes, .stretchWrist, .hoverSmile, .contextMenuAttend,
+             .focusShift, .fixPosture, .adjustOutfit, .lookAround, .stretch, .stepAside, .postureReset:
             return false
         }
     }
@@ -644,12 +643,23 @@ private final class PetRigScene: SKScene {
         switch animation {
         case .breathing:
             playBreathing(duration: duration)
+        case .hairSway:
+            playHairSway(duration: duration)
+        case .weightShift:
+            playWeightShift(duration: duration)
+        case .shoulderRelax:
+            playShoulderRelax(duration: duration)
+        case .cursorLook:
+            playCursorLook(duration: duration)
+        case .dragReleaseSettle:
+            playDragReleaseSettle(duration: duration)
+        case .wakeUp:
+            playWakeUp(duration: duration)
         case .idle, .running, .waiting, .failed, .waving, .jumping, .review, .turning, .glanceLeft, .glanceRight,
              .blink, .slowBlink, .eyeShiftLeft, .eyeShiftRight, .focusTighten, .relaxFace, .smallSmile, .tiredSoften,
-             .curiousLook, .hairSway, .weightShift, .shoulderRelax, .tinyHandAdjust, .thinking, .adjustGlasses,
-             .nod, .tapKeyboard, .checkNotes, .stretchWrist, .cursorLook, .hoverSmile, .contextMenuAttend,
-             .focusShift, .fixPosture, .adjustOutfit, .lookAround, .stretch, .stepAside, .postureReset,
-             .dragReleaseSettle, .wakeUp:
+             .curiousLook, .tinyHandAdjust, .thinking, .adjustGlasses,
+             .nod, .tapKeyboard, .checkNotes, .stretchWrist, .hoverSmile, .contextMenuAttend,
+             .focusShift, .fixPosture, .adjustOutfit, .lookAround, .stretch, .stepAside, .postureReset:
             return false
         }
 
@@ -676,9 +686,14 @@ private final class PetRigScene: SKScene {
             let node = SKSpriteNode(texture: texture)
             node.name = part.id
             node.anchorPoint = CGPoint(x: part.anchor.x, y: part.anchor.y)
-            node.position = CGPoint(x: part.position.x - center.x, y: part.position.y - center.y)
             node.zPosition = part.zIndex
-            rigNode.addChild(node)
+            if let parentID = part.parent, let parentNode = partNodes[parentID] {
+                node.position = CGPoint(x: part.position.x, y: part.position.y)
+                parentNode.addChild(node)
+            } else {
+                node.position = CGPoint(x: part.position.x - center.x, y: part.position.y - center.y)
+                rigNode.addChild(node)
+            }
             partNodes[part.id] = node
             basePositions[part.id] = node.position
         }
@@ -696,6 +711,126 @@ private final class PetRigScene: SKScene {
         up.timingMode = .easeInEaseOut
         down.timingMode = .easeInEaseOut
         rigNode.run(.sequence([up, down]))
+    }
+
+    private func playHairSway(duration: TimeInterval) {
+        let head = partNodes["head"]
+        let body = partNodes["body"]
+        let swayOut = SKAction.group([
+            .moveBy(x: 2, y: 0, duration: duration * 0.28),
+            .rotate(byAngle: -0.014, duration: duration * 0.28)
+        ])
+        let swayBack = SKAction.group([
+            .moveBy(x: -4, y: 0, duration: duration * 0.44),
+            .rotate(byAngle: 0.028, duration: duration * 0.44)
+        ])
+        let settle = SKAction.group([
+            .moveBy(x: 2, y: 0, duration: duration * 0.28),
+            .rotate(byAngle: -0.014, duration: duration * 0.28)
+        ])
+        let bodyCounterOut = SKAction.rotate(byAngle: 0.003, duration: duration * 0.28)
+        let bodyCounterBack = SKAction.rotate(byAngle: -0.006, duration: duration * 0.44)
+        let bodyCounterSettle = SKAction.rotate(byAngle: 0.003, duration: duration * 0.28)
+        [swayOut, swayBack, settle, bodyCounterOut, bodyCounterBack, bodyCounterSettle].forEach { $0.timingMode = .easeInEaseOut }
+        head?.run(.sequence([swayOut, swayBack, settle]))
+        body?.run(.sequence([bodyCounterOut, bodyCounterBack, bodyCounterSettle]))
+    }
+
+    private func playWeightShift(duration: TimeInterval) {
+        let left = SKAction.group([
+            .moveBy(x: -4, y: 0, duration: duration * 0.25),
+            .rotate(byAngle: 0.012, duration: duration * 0.25)
+        ])
+        let right = SKAction.group([
+            .moveBy(x: 8, y: 0, duration: duration * 0.5),
+            .rotate(byAngle: -0.024, duration: duration * 0.5)
+        ])
+        let center = SKAction.group([
+            .moveBy(x: -4, y: 0, duration: duration * 0.25),
+            .rotate(byAngle: 0.012, duration: duration * 0.25)
+        ])
+        [left, right, center].forEach { $0.timingMode = .easeInEaseOut }
+        rigNode.run(.sequence([left, right, center]))
+    }
+
+    private func playShoulderRelax(duration: TimeInterval) {
+        let body = partNodes["body"]
+        let head = partNodes["head"]
+        let bodyDown = SKAction.group([
+            .moveBy(x: 0, y: -5, duration: duration * 0.35),
+            .scaleX(to: 1.001, y: 0.996, duration: duration * 0.35)
+        ])
+        let bodySettle = SKAction.group([
+            .moveBy(x: 0, y: 5, duration: duration * 0.45),
+            .scaleX(to: 1, y: 1, duration: duration * 0.45)
+        ])
+        let headDown = SKAction.moveBy(x: 0, y: -2, duration: duration * 0.35)
+        let headSettle = SKAction.moveBy(x: 0, y: 2, duration: duration * 0.45)
+        let hold = SKAction.wait(forDuration: duration * 0.2)
+        [bodyDown, bodySettle, headDown, headSettle].forEach { $0.timingMode = .easeInEaseOut }
+        body?.run(.sequence([bodyDown, hold, bodySettle]))
+        head?.run(.sequence([headDown, hold, headSettle]))
+    }
+
+    private func playCursorLook(duration: TimeInterval) {
+        let head = partNodes["head"]
+        let body = partNodes["body"]
+        let turnIn = SKAction.group([
+            .moveBy(x: 3, y: 1, duration: duration * 0.25),
+            .rotate(byAngle: -0.028, duration: duration * 0.25)
+        ])
+        let hold = SKAction.wait(forDuration: duration * 0.35)
+        let turnOut = SKAction.group([
+            .moveBy(x: -3, y: -1, duration: duration * 0.4),
+            .rotate(byAngle: 0.028, duration: duration * 0.4)
+        ])
+        let bodyCounterIn = SKAction.rotate(byAngle: 0.004, duration: duration * 0.25)
+        let bodyCounterOut = SKAction.rotate(byAngle: -0.004, duration: duration * 0.4)
+        [turnIn, turnOut, bodyCounterIn, bodyCounterOut].forEach { $0.timingMode = .easeInEaseOut }
+        head?.run(.sequence([turnIn, hold, turnOut]))
+        body?.run(.sequence([bodyCounterIn, hold, bodyCounterOut]))
+    }
+
+    private func playDragReleaseSettle(duration: TimeInterval) {
+        let compress = SKAction.group([
+            .moveBy(x: 0, y: -6, duration: duration * 0.28),
+            .scaleX(to: 1.006, y: 0.992, duration: duration * 0.28)
+        ])
+        let rebound = SKAction.group([
+            .moveBy(x: 0, y: 9, duration: duration * 0.32),
+            .scaleX(to: 0.998, y: 1.004, duration: duration * 0.32)
+        ])
+        let settle = SKAction.group([
+            .moveBy(x: 0, y: -3, duration: duration * 0.40),
+            .scaleX(to: 1, y: 1, duration: duration * 0.40)
+        ])
+        [compress, rebound, settle].forEach { $0.timingMode = .easeInEaseOut }
+        rigNode.run(.sequence([compress, rebound, settle]))
+    }
+
+    private func playWakeUp(duration: TimeInterval) {
+        let head = partNodes["head"]
+        let body = partNodes["body"]
+        let bodyRise = SKAction.group([
+            .moveBy(x: 0, y: 4, duration: duration * 0.36),
+            .scaleX(to: 1.002, y: 1.006, duration: duration * 0.36)
+        ])
+        let bodySettle = SKAction.group([
+            .moveBy(x: 0, y: -4, duration: duration * 0.44),
+            .scaleX(to: 1, y: 1, duration: duration * 0.44)
+        ])
+        let headLift = SKAction.group([
+            .moveBy(x: 0, y: 5, duration: duration * 0.36),
+            .rotate(byAngle: -0.012, duration: duration * 0.36)
+        ])
+        let headSettle = SKAction.group([
+            .moveBy(x: 0, y: -5, duration: duration * 0.44),
+            .rotate(byAngle: 0.012, duration: duration * 0.44)
+        ])
+        let hold = SKAction.wait(forDuration: duration * 0.2)
+        [bodyRise, bodySettle, headLift, headSettle].forEach { $0.timingMode = .easeInEaseOut }
+        body?.run(.sequence([bodyRise, hold, bodySettle]))
+        head?.run(.sequence([headLift, hold, headSettle]))
     }
 
 }
@@ -1029,6 +1164,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private let actionCatalog = PetActionCatalog()
     private let actionTimeline = PetActionTimeline()
     private let timingPolicy = PetAnimationTimingPolicy()
+    private let schedulerIntervalPolicy = PetActionSchedulerIntervalPolicy()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -1480,62 +1616,41 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func smallActionInterval(initialDelay: Bool) -> TimeInterval {
-        if initialDelay {
-            return TimeInterval.random(in: 24.0...40.0)
-        }
-
-        switch currentPresentationState {
-        case .offlineRest:
-            return TimeInterval.random(in: 60.0...120.0)
-        case .reviewFocused, .toolRunning:
-            return TimeInterval.random(in: 32.0...68.0)
-        case .blockedConcerned, .completedCalm, .longWorkTired:
-            return TimeInterval.random(in: 45.0...90.0)
-        case .idleRelaxed, .waitingAttentive:
-            return TimeInterval.random(in: 35.0...75.0)
-        }
+        schedulerIntervalPolicy.smallActionIntervalRange(
+            for: currentPresentationState,
+            initialDelay: initialDelay
+        ).randomInterval()
     }
 
     private func microActionInterval(initialDelay: Bool) -> TimeInterval {
-        if initialDelay {
-            return TimeInterval.random(in: 10.0...18.0)
-        }
-
-        switch currentPresentationState {
-        case .offlineRest:
-            return TimeInterval.random(in: 60.0...120.0)
-        case .reviewFocused, .toolRunning:
-            return TimeInterval.random(in: 14.0...30.0)
-        case .blockedConcerned, .completedCalm, .longWorkTired:
-            return TimeInterval.random(in: 24.0...48.0)
-        case .idleRelaxed, .waitingAttentive:
-            return TimeInterval.random(in: 18.0...36.0)
-        }
+        schedulerIntervalPolicy.microActionIntervalRange(
+            for: currentPresentationState,
+            initialDelay: initialDelay
+        ).randomInterval()
     }
 
     private func largeActionInterval(initialDelay: Bool) -> TimeInterval {
-        if initialDelay {
-            return TimeInterval.random(in: 140.0...220.0)
-        }
-
-        switch currentPresentationState {
-        case .offlineRest:
-            return TimeInterval.random(in: 120.0...240.0)
-        case .reviewFocused, .toolRunning:
-            return TimeInterval.random(in: 220.0...360.0)
-        case .blockedConcerned, .completedCalm, .longWorkTired:
-            return TimeInterval.random(in: 260.0...420.0)
-        case .idleRelaxed, .waitingAttentive:
-            return TimeInterval.random(in: 200.0...340.0)
-        }
+        schedulerIntervalPolicy.largeActionIntervalRange(
+            for: currentPresentationState,
+            initialDelay: initialDelay
+        ).randomInterval()
     }
 
     private func initialWindowFrame() -> NSRect {
         let size = NSSize(width: config.displayWidth, height: config.displayHeight + 48)
         let visibleFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let origin = PetWindowPlacementPolicy().initialOrigin(
+            visibleFrame: PetWindowPlacementRect(
+                x: Double(visibleFrame.minX),
+                y: Double(visibleFrame.minY),
+                width: Double(visibleFrame.width),
+                height: Double(visibleFrame.height)
+            ),
+            windowSize: PetWindowPlacementSize(width: Double(size.width), height: Double(size.height))
+        )
         return NSRect(
-            x: visibleFrame.maxX - size.width - 24,
-            y: visibleFrame.minY + 24,
+            x: CGFloat(origin.x),
+            y: CGFloat(origin.y),
             width: size.width,
             height: size.height
         )

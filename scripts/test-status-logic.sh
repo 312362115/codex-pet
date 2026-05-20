@@ -15,3 +15,4 @@ swiftc \
   -o "$BUILD_DIR/status-tests"
 
 "$BUILD_DIR/status-tests"
+"$ROOT/scripts/validate-rig-assets.py"

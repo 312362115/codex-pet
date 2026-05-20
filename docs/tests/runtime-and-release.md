@@ -14,6 +14,7 @@
 
 ```text
 PASS status logic
+PASS rig assets
 ```
 
 覆盖范围：
@@ -26,7 +27,12 @@ PASS status logic
 - 各动画帧数。
 - 动作总时长和按帧数自适应的单帧间隔。
 - 展示状态、微动作、小动作、中/大动作、交互和调试动作策略；独立表情动作不进入默认调度。
+- 调度节奏：初始小动作在 8-14 秒内出现，初始大动作在 24-38 秒内出现；等待/待机状态的小动作池必须包含多种可见动作，避免实际运行只在少数动作里循环。
+- 表情安全策略：旧脸部覆盖动作 `defaultEligible=false`；所有默认可调度动作都有非空 baked expression intent。
 - 动作 catalog 的层级分类。
+- 默认窗口位置策略：启动落在当前屏幕可见区域左下角，并保留 24px 边距。
+- rig 渲染模式策略：`breathing`、`hairSway`、`weightShift`、`shoulderRelax`、`cursorLook`、`dragReleaseSettle`、`wakeUp` 走 SpriteKit rig；旧脸部兼容枚举不走 rig。
+- rig 资产策略：manifest 只能引用当前允许的 `body/head` 部件；`body` 必须是 root，`head` 必须 parent 到 `body`；拒绝脸部、眼睛、头发、眼镜等高风险覆盖层；透明像素隐藏 RGB 必须归零。
 - 统一 timeline 的冲突决策：小动作排队、可见动作打断微动作、大动作丢弃、hover 节流、drag 抑制、过期状态动作丢弃。
 
 展示状态停留姿态预期：
@@ -69,7 +75,8 @@ PASS status logic
 对应时长预期：
 
 - 旧表情兼容策略：`blink` 为 `0.25s`，`slow-blink` 为 `0.7s`，`eye-shift-left/right` 为 `0.8s`；这些动作不进入默认调度。
-- 微动作：`1.2-1.6s`。
+- rig 微动作：`breathing` / `hair-sway` 为 `1.2s`，`weight-shift` / `shoulder-relax` / `cursor-look` 为 `1.6s`。
+- rig 交互动作：`drag-release-settle` 为 `1.0s`，`wake-up` 为 `2.0s`。
 - 短动作：`2.4s`。
 - 短瞥动作：`1.6s`。
 - `look-around`：`3.2s`。
@@ -103,6 +110,7 @@ PASS status logic
 执行命令：
 
 ```bash
+./scripts/validate-rig-assets.py
 ./scripts/build-rig-assets.py
 ./scripts/build-app.sh
 find build/CodexPetCompanion.app/Contents/Resources/lingxi-ol-rig -maxdepth 2 -type f | sort
@@ -110,10 +118,12 @@ find build/CodexPetCompanion.app/Contents/Resources/lingxi-ol-rig -maxdepth 2 -t
 
 预期结果：
 
+- `./scripts/validate-rig-assets.py` 输出 `PASS rig assets`。
 - 输出包含 `rig.json`。
 - 输出包含 `parts/body.png` 和 `parts/head.png`。
-- 输出不包含 `parts/eyes-blink.png` 等脸部覆盖层；脸部 rig 在干净拆层素材完成前不打包。
-- `./scripts/build-app.sh` 通过，说明 SpriteKit 链接和资源复制没有破坏构建。
+- 输出不包含 `parts/eyes-blink.png` 等脸部覆盖层；表情不做独立 rig，后续只接受动作一体的全帧素材。
+- `./scripts/build-app.sh` 通过，说明 rig 资产验证、SpriteKit 链接和资源复制没有破坏构建。
+- `./scripts/test-status-logic.sh` 覆盖 `breathing`、`hairSway`、`weightShift`、`shoulderRelax`、`cursorLook`、`dragReleaseSettle`、`wakeUp` 走 SpriteKit rig，且 `waitingAttentive` 微动作池包含 `breathing`、`weightShift`、`shoulderRelax`、`hairSway`；脸部兼容枚举继续走 PNG / 兼容路径。
 
 ## 用例 2.2：运行素材清理检查
 
@@ -130,6 +140,7 @@ find assets/reference/generated -maxdepth 1 -type f | sort
 
 - `assets/lingxi-ol-hires/` 不包含 `blink`、`slow-blink`、`eye-shift-left`、`eye-shift-right`、`focus-tighten`、`relax-face`、`small-smile`、`tired-soften`、`curious-look`、`hover-smile`、`context-menu-attend`、`jumping`、`running-left`、`running-right`。
 - `assets/reference/generated/` 只包含 `README.md`、`base-shirt-skirt-hires.png`、`action-strip-shirt-skirt-consistent.png`、`turntable-strip-shirt-skirt-consistent.png`。
+- 如果启用表情一体化关键帧，`assets/reference/generated/` 还应包含版本化的 `expression-keyframes-v1.png`；它是整帧源图，不是五官覆盖层。
 - 运行帧中的重复静止帧允许存在，它们用于停帧 timing，不按单帧去重。
 
 ## 用例 3：Release 打包

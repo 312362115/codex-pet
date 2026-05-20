@@ -730,6 +730,60 @@ public struct PetMotionPolicy {
     }
 }
 
+public struct PetWindowPlacementSize: Equatable, Sendable {
+    public let width: Double
+    public let height: Double
+
+    public init(width: Double, height: Double) {
+        self.width = width
+        self.height = height
+    }
+}
+
+public struct PetWindowPlacementPoint: Equatable, Sendable {
+    public let x: Double
+    public let y: Double
+
+    public init(x: Double, y: Double) {
+        self.x = x
+        self.y = y
+    }
+}
+
+public struct PetWindowPlacementRect: Equatable, Sendable {
+    public let x: Double
+    public let y: Double
+    public let width: Double
+    public let height: Double
+
+    public init(x: Double, y: Double, width: Double, height: Double) {
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+    }
+}
+
+public struct PetWindowPlacementPolicy: Sendable {
+    public let margin: Double
+
+    public init(margin: Double = 24) {
+        self.margin = margin
+    }
+
+    public func initialOrigin(
+        visibleFrame: PetWindowPlacementRect,
+        windowSize: PetWindowPlacementSize
+    ) -> PetWindowPlacementPoint {
+        let horizontalMargin = windowSize.width + margin <= visibleFrame.width ? margin : 0
+        let verticalMargin = windowSize.height + margin <= visibleFrame.height ? margin : 0
+        return PetWindowPlacementPoint(
+            x: visibleFrame.x + horizontalMargin,
+            y: visibleFrame.y + verticalMargin
+        )
+    }
+}
+
 public enum PetRenderMode: Hashable, Sendable {
     case frameClip
     case spriteKitRigMotion
@@ -740,14 +794,13 @@ public struct PetRenderModePolicy {
 
     public func renderMode(for animation: PetAnimation) -> PetRenderMode {
         switch animation {
-        case .breathing:
+        case .breathing, .hairSway, .weightShift, .shoulderRelax, .cursorLook, .dragReleaseSettle, .wakeUp:
             return .spriteKitRigMotion
         case .idle, .running, .waiting, .failed, .waving, .jumping, .review, .turning, .glanceLeft, .glanceRight,
              .blink, .slowBlink, .eyeShiftLeft, .eyeShiftRight, .focusTighten, .relaxFace, .smallSmile, .tiredSoften,
-             .curiousLook, .hairSway, .weightShift, .shoulderRelax, .tinyHandAdjust, .thinking, .adjustGlasses,
-             .nod, .tapKeyboard, .checkNotes, .stretchWrist, .cursorLook, .hoverSmile, .contextMenuAttend,
-             .focusShift, .fixPosture, .adjustOutfit, .lookAround, .stretch, .stepAside, .postureReset,
-             .dragReleaseSettle, .wakeUp:
+             .curiousLook, .tinyHandAdjust, .thinking, .adjustGlasses,
+             .nod, .tapKeyboard, .checkNotes, .stretchWrist, .hoverSmile, .contextMenuAttend,
+             .focusShift, .fixPosture, .adjustOutfit, .lookAround, .stretch, .stepAside, .postureReset:
             return .frameClip
         }
     }
@@ -824,7 +877,7 @@ public struct PetAmbientActionPolicy {
         case .idleRelaxed:
             return [[.breathing], [.weightShift], [.shoulderRelax], [.hairSway]]
         case .waitingAttentive:
-            return [[.breathing], [.tinyHandAdjust], [.hairSway]]
+            return [[.breathing], [.weightShift], [.shoulderRelax], [.tinyHandAdjust], [.hairSway]]
         case .reviewFocused:
             return [[.breathing], [.tinyHandAdjust], [.hairSway]]
         case .toolRunning:
@@ -847,9 +900,9 @@ public struct PetAmbientActionPolicy {
         case .offlineRest:
             return []
         case .idleRelaxed:
-            return [[.waving]]
+            return [[.waving], [.nod], [.cursorLook], [.tinyHandAdjust]]
         case .waitingAttentive:
-            return [[.cursorLook], [.waving]]
+            return [[.cursorLook], [.waving], [.nod], [.tinyHandAdjust], [.adjustOutfit]]
         case .reviewFocused:
             return [[.adjustGlasses], [.thinking], [.nod], [.checkNotes]]
         case .toolRunning:
@@ -857,7 +910,7 @@ public struct PetAmbientActionPolicy {
         case .blockedConcerned:
             return [[.glanceLeft], [.glanceRight], [.shoulderRelax]]
         case .completedCalm:
-            return [[.nod], [.shoulderRelax]]
+            return [[.nod], [.waving], [.shoulderRelax]]
         case .longWorkTired:
             return [[.stretchWrist], [.shoulderRelax], [.fixPosture]]
         }
@@ -915,5 +968,83 @@ public struct PetAmbientActionPolicy {
 
     public func hoverActionSuites(for status: CodexActivityStatus) -> [[PetAnimation]] {
         hoverActionSuites(for: status.defaultPresentationState)
+    }
+}
+
+public struct PetSchedulerIntervalRange: Equatable, Sendable {
+    public let lowerBound: TimeInterval
+    public let upperBound: TimeInterval
+
+    public init(_ lowerBound: TimeInterval, _ upperBound: TimeInterval) {
+        self.lowerBound = lowerBound
+        self.upperBound = upperBound
+    }
+
+    public func randomInterval() -> TimeInterval {
+        TimeInterval.random(in: lowerBound...upperBound)
+    }
+}
+
+public struct PetActionSchedulerIntervalPolicy: Sendable {
+    public init() {}
+
+    public func smallActionIntervalRange(
+        for presentationState: PetPresentationState,
+        initialDelay: Bool
+    ) -> PetSchedulerIntervalRange {
+        if initialDelay {
+            return PetSchedulerIntervalRange(8, 14)
+        }
+
+        switch presentationState {
+        case .offlineRest:
+            return PetSchedulerIntervalRange(75, 140)
+        case .reviewFocused, .toolRunning:
+            return PetSchedulerIntervalRange(20, 36)
+        case .blockedConcerned, .completedCalm, .longWorkTired:
+            return PetSchedulerIntervalRange(24, 46)
+        case .idleRelaxed, .waitingAttentive:
+            return PetSchedulerIntervalRange(22, 42)
+        }
+    }
+
+    public func microActionIntervalRange(
+        for presentationState: PetPresentationState,
+        initialDelay: Bool
+    ) -> PetSchedulerIntervalRange {
+        if initialDelay {
+            return PetSchedulerIntervalRange(5, 9)
+        }
+
+        switch presentationState {
+        case .offlineRest:
+            return PetSchedulerIntervalRange(60, 120)
+        case .reviewFocused, .toolRunning:
+            return PetSchedulerIntervalRange(10, 20)
+        case .blockedConcerned, .completedCalm, .longWorkTired:
+            return PetSchedulerIntervalRange(18, 36)
+        case .idleRelaxed, .waitingAttentive:
+            return PetSchedulerIntervalRange(12, 24)
+        }
+    }
+
+    public func largeActionIntervalRange(
+        for presentationState: PetPresentationState,
+        initialDelay: Bool
+    ) -> PetSchedulerIntervalRange {
+        if initialDelay {
+            return PetSchedulerIntervalRange(24, 38)
+        }
+
+        switch presentationState {
+        case .offlineRest:
+            return PetSchedulerIntervalRange(120, 220)
+        case .reviewFocused, .toolRunning:
+            return PetSchedulerIntervalRange(70, 120)
+        case .blockedConcerned, .completedCalm, .longWorkTired:
+            return PetSchedulerIntervalRange(90, 150)
+        case .idleRelaxed, .waitingAttentive:
+            return PetSchedulerIntervalRange(60, 110)
+        }
     }
 }

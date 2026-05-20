@@ -18,7 +18,7 @@
 - 根据 Codex 本地状态显示 `Codex 工作中`、`等待输入`、`Codex 离线`。
 - 平时低干扰待命，按状态插入呼吸、看向用户、扶眼镜、点头、整理姿态等短动作；完整转身只保留为调试/素材检查动作。
 - 运行帧包含离线生成的透明通道感知补间，短动作 16-24 帧，转身检查动作 25 帧，播放时长保持稳定。
-- 待机呼吸使用轻量 SpriteKit rig；大动作和交互动作继续播放高清 PNG clip。
+- 待机/等待态的呼吸、头部轻摆、重心变化、肩部放松、轻微看向用户、拖动落位和唤醒反馈使用轻量 SpriteKit rig；大动作继续播放高清 PNG clip。
 - 拖动时暂停动画，使用 AppKit 原生窗口拖动。
 - 右键菜单支持打开 Codex 和退出宠物。
 
@@ -50,13 +50,14 @@
 - `memory/`：项目级记忆，供后续 Codex 会话快速恢复上下文。
 - `INSTALL.md`：安装、验证和排障说明。
 - `assets/lingxi-ol-hires/`：当前桌宠实际使用的高清帧。
-- `assets/lingxi-ol-rig/`：当前呼吸微动作使用的 SpriteKit rig PoC 资产，只包含安全的身体/头部拆层。
+- `assets/lingxi-ol-rig/`：当前 SpriteKit rig PoC 资产，只包含安全的身体/头部拆层，用于呼吸、头部轻摆、重心变化、肩部放松、轻微看向用户、拖动落位和唤醒反馈。
 - `assets/lingxi-ol/`：旧版标准 spritesheet 备份，当前不作为主展示资源。
 - `assets/reference/generated/`：当前运行帧重建所需的高清源图。
 - `scripts/install.sh`：一键测试、构建、签名、安装并重启桌宠。
 - `scripts/package-release.sh`：生成可上传到 GitHub Release 的预编译安装包。
 - `scripts/build-app.sh`：构建 `.app`。
 - `scripts/test-status-logic.sh`：运行策略测试。
+- `scripts/validate-rig-assets.py`：校验 rig manifest、部件图、透明像素和高风险脸部/头发覆盖层禁入规则。
 - `scripts/build-hires-assets.py`：旧版临时行图重建脚本，不作为当前运行素材主入口。
 - `scripts/build-shirt-skirt-assets.py`：从衬衣包臀裙参考图重建当前运行帧。
 
@@ -85,9 +86,9 @@ open build/CodexPetCompanion.app
 
 ## 资源说明
 
-当前运行版主用 `assets/lingxi-ol-hires/`，README 顶部展示的主图来自 `assets/reference/generated/base-shirt-skirt-hires.png`。静止、工作、等待等主态由这张高清主图生成，短动作来自 `assets/reference/generated/action-strip-shirt-skirt-consistent.png`，转身检查动作来自 `assets/reference/generated/turntable-strip-shirt-skirt-consistent.png`。裁切时禁止放大，也不再对整个人物做缩放动画；运行帧限制最大人物高度并在 App 内按比例绘制，避免从小图切大图导致模糊和身体比例变形。短动作和转身动作会在生成阶段插入 premultiplied-alpha 补间帧，运行时只播放 PNG 序列，不引入模型依赖。
+当前运行版主用 `assets/lingxi-ol-hires/`，README 顶部展示的主图来自 `assets/reference/generated/base-shirt-skirt-hires.png`。基础待机由这张高清主图生成，短动作来自 `assets/reference/generated/action-strip-shirt-skirt-consistent.png`，转身检查动作来自 `assets/reference/generated/turntable-strip-shirt-skirt-consistent.png`；`failed`、`review`、`waiting`、`nod` 和 `wake-up` 等语义状态会额外使用 `assets/reference/generated/expression-keyframes-v1.png` 中的整帧表情关键帧。裁切时禁止放大，也不再对整个人物做缩放动画；运行帧限制最大人物高度并在 App 内按比例绘制，避免从小图切大图导致模糊和身体比例变形。短动作和转身动作会在生成阶段插入 premultiplied-alpha 补间帧，运行时只播放 PNG 序列，不引入模型依赖。
 
-旧脸部覆盖素材已经从运行目录清理：`blink`、`slow-blink`、`eye-shift-*`、`focus-tighten`、`small-smile`、`hover-smile`、`context-menu-attend` 等目录不再打包。重复的静止帧用于动作停顿和节奏控制，不按单帧去重。
+旧脸部覆盖素材已经从运行目录清理：`blink`、`slow-blink`、`eye-shift-*`、`focus-tighten`、`small-smile`、`hover-smile`、`context-menu-attend` 等目录不再打包。运行默认动作通过动作自身帧或 rig 姿态携带表情意图，不再叠加独立脸部、五官或眼睑覆盖层。`scripts/validate-rig-assets.py` 会阻止 `eyes`、`face`、`lid`、`hair`、`glasses` 等高风险覆盖层进入当前 rig 包。重复的静止帧用于动作停顿和节奏控制，不按单帧去重。
 
 ## 注意
 

@@ -5,3 +5,4 @@
 - `base-shirt-skirt-hires.png`：当前运行帧的高清主姿态源图，用于缩小裁切，避免小格放大导致毛刺。
 - `action-strip-shirt-skirt-consistent.png`：当前运行版正面小动作源图，4 个全身姿态来自同一套角色。
 - `turntable-strip-shirt-skirt-consistent.png`：当前运行版转身源图，8 个全身视角来自同一套角色。
+- `expression-keyframes-v1.png`：表情和动作一体的关键源帧，当前用于 `failed`、`review`、`waiting`、`nod` 和 `wake-up` 等语义状态；不拆分五官覆盖层。

@@ -64,18 +64,34 @@ def position_for(top_left_pivot: tuple[int, int]) -> dict[str, int]:
     return {"x": x, "y": HEIGHT - y}
 
 
+def relative_position_for(
+    top_left_pivot: tuple[int, int],
+    parent_top_left_pivot: tuple[int, int],
+) -> dict[str, int]:
+    x, y = top_left_pivot
+    parent_x, parent_y = parent_top_left_pivot
+    return {"x": x - parent_x, "y": parent_y - y}
+
+
 def part_entry(
     part_id: str,
     image: str,
     z_index: int,
     top_left_pivot: tuple[int, int] = (288, 312),
+    parent: str | None = None,
+    parent_top_left_pivot: tuple[int, int] | None = None,
 ) -> dict[str, object]:
     ax, ay = anchor_for(top_left_pivot)
+    position = (
+        relative_position_for(top_left_pivot, parent_top_left_pivot)
+        if parent_top_left_pivot is not None
+        else position_for(top_left_pivot)
+    )
     return {
         "id": part_id,
         "image": image,
-        "parent": None,
-        "position": position_for(top_left_pivot),
+        "parent": parent,
+        "position": position,
         "anchor": {"x": ax, "y": ay},
         "zIndex": z_index,
     }
@@ -104,7 +120,7 @@ def main() -> None:
         "canvas": {"width": WIDTH, "height": HEIGHT},
         "parts": [
             part_entry("body", "parts/body.png", 10, (288, 312)),
-            part_entry("head", "parts/head.png", 30, (288, 190)),
+            part_entry("head", "parts/head.png", 30, (288, 190), parent="body", parent_top_left_pivot=(288, 312)),
         ],
     }
     (OUTPUT / "rig.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

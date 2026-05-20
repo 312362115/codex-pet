@@ -1,6 +1,7 @@
 source=assets/reference/generated/base-shirt-skirt-hires.png
 source=assets/reference/generated/action-strip-shirt-skirt-consistent.png
 source=assets/reference/generated/turntable-strip-shirt-skirt-consistent.png
+source=assets/reference/generated/expression-keyframes-v1.png
 display_size=576x624
 max_body_height=540
 max_upscale=1.0
