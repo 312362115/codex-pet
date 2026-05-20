@@ -374,6 +374,38 @@ struct StatusTestRunner {
         )
         expect(smallInterruptsMicro.outcome == .playNow, "larger visible actions should interrupt micro actions")
 
+        let runtimeSchedulingPolicy = PetRuntimeSchedulingPolicy()
+        expect(
+            runtimeSchedulingPolicy.hoverBeginDecision(activeSchedulerKind: .small, activeActionLayer: .small) == .startHoverInteraction,
+            "hover should interrupt an active small ambient action"
+        )
+        expect(
+            runtimeSchedulingPolicy.hoverBeginDecision(activeSchedulerKind: .large, activeActionLayer: .large) == .startHoverInteraction,
+            "hover should interrupt an active large ambient action"
+        )
+        expect(
+            runtimeSchedulingPolicy.hoverBeginDecision(activeSchedulerKind: .interaction, activeActionLayer: .interaction) == .deferToActiveInteraction,
+            "hover should not interrupt an active interaction action"
+        )
+        expect(
+            runtimeSchedulingPolicy.shouldScheduleAmbientActions(
+                isDragging: false,
+                isHovering: false,
+                hasActiveAction: true,
+                hasValidAmbientTimer: false
+            ) == false,
+            "launch scheduling should not add ambient timers while an interaction is active"
+        )
+        expect(
+            runtimeSchedulingPolicy.shouldScheduleAmbientActions(
+                isDragging: false,
+                isHovering: false,
+                hasActiveAction: false,
+                hasValidAmbientTimer: false
+            ),
+            "launch scheduling should start ambient timers when runtime is idle"
+        )
+
         let draggingState = PetActionTimelineState(
             currentPresentationState: .waitingAttentive,
             currentLayer: nil,

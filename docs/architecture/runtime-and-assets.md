@@ -91,7 +91,7 @@ Codex 元数据先被分类为 `CodexWorkPhase`，再映射为可长期停留的
 | 微动作调度 | working `14-30s`，waiting `18-36s` | 微动作是最低干扰 ambient；hover 时暂停。 |
 | 小动作调度 | working `32-68s`，waiting `35-75s` | 小动作可短暂排队，状态变化或交互时丢弃。 |
 | 大动作调度 | working `220-360s`，waiting `200-340s` | 只在空窗执行，忙碌、hover、状态刚切换时丢弃。 |
-| 交互调度 | hover、右键、drag、状态变化事件驱动 | hover 不抢正在播放的可见动作；右键和拖动仍是高优先级。 |
+| 交互调度 | hover、右键、drag、状态变化事件驱动 | hover 会打断 ambient 微/小/大动作并进入短反馈；若当前已经是 interaction，则不二次抢占；右键和拖动仍是高优先级。 |
 
 当前运行资产帧数：
 

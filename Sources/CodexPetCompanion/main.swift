@@ -1,6 +1,9 @@
 import AppKit
 import Foundation
 import SpriteKit
+#if canImport(PetCompanion)
+import PetCompanion
+#endif
 
 private enum PetRow: Int {
     case idle = 0
@@ -1129,13 +1132,7 @@ private final class PetView: NSView {
     }
 }
 
-private enum PetSchedulerKind: String {
-    case micro
-    case small
-    case large
-    case interaction
-}
-
+@MainActor
 private final class AppDelegate: NSObject, NSApplicationDelegate {
     private let config = CompanionConfig.standard
     private var window: PetWindow?
@@ -1165,6 +1162,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private let actionTimeline = PetActionTimeline()
     private let timingPolicy = PetAnimationTimingPolicy()
     private let schedulerIntervalPolicy = PetActionSchedulerIntervalPolicy()
+    private let runtimeSchedulingPolicy = PetRuntimeSchedulingPolicy()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -1207,11 +1205,13 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             self.window = window
 
             pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-                self?.pollPresentationState()
+                Task { @MainActor in
+                    self?.pollPresentationState()
+                }
             }
 
             pollPresentationState()
-            scheduleAllSchedulers(initialDelay: true)
+            scheduleAllSchedulersIfIdle(initialDelay: true)
         } catch {
             presentStartupError(error)
         }
@@ -1260,39 +1260,79 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         scheduleLargeAction(initialDelay: initialDelay)
     }
 
+    private func scheduleAllSchedulersIfIdle(initialDelay: Bool = false) {
+        guard runtimeSchedulingPolicy.shouldScheduleAmbientActions(
+            isDragging: isDragging,
+            isHovering: isHovering,
+            hasActiveAction: hasActiveAction,
+            hasValidAmbientTimer: hasValidAmbientActionTimer
+        ) else {
+            return
+        }
+        scheduleAllSchedulers(initialDelay: initialDelay)
+    }
+
+    private var hasActiveAction: Bool {
+        activeSchedulerKind != nil || !actionSuite.isEmpty || (animationTimer?.isValid == true)
+    }
+
+    private var hasValidAmbientActionTimer: Bool {
+        microActionTimer?.isValid == true
+            || smallActionTimer?.isValid == true
+            || largeActionTimer?.isValid == true
+    }
+
+    private func invalidateAmbientActionTimers() {
+        microActionTimer?.invalidate()
+        microActionTimer = nil
+        smallActionTimer?.invalidate()
+        smallActionTimer = nil
+        largeActionTimer?.invalidate()
+        largeActionTimer = nil
+    }
+
     private func scheduleMicroAction(initialDelay: Bool = false) {
         microActionTimer?.invalidate()
+        microActionTimer = nil
         guard !isDragging, !isHovering else {
             return
         }
 
         let interval = microActionInterval(initialDelay: initialDelay)
         microActionTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
-            self?.requestNextAction(kind: .micro)
+            Task { @MainActor in
+                self?.requestNextAction(kind: .micro)
+            }
         }
     }
 
     private func scheduleSmallAction(initialDelay: Bool = false) {
         smallActionTimer?.invalidate()
+        smallActionTimer = nil
         guard !isDragging, !isHovering else {
             return
         }
 
         let interval = smallActionInterval(initialDelay: initialDelay)
         smallActionTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
-            self?.requestNextAction(kind: .small)
+            Task { @MainActor in
+                self?.requestNextAction(kind: .small)
+            }
         }
     }
 
     private func scheduleLargeAction(initialDelay: Bool = false) {
         largeActionTimer?.invalidate()
+        largeActionTimer = nil
         guard !isDragging, !isHovering else {
             return
         }
 
         let interval = largeActionInterval(initialDelay: initialDelay)
         largeActionTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
-            self?.requestNextAction(kind: .large)
+            Task { @MainActor in
+                self?.requestNextAction(kind: .large)
+            }
         }
     }
 
@@ -1361,6 +1401,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func playActionSuite(_ suite: [PetAnimation], kind: PetSchedulerKind, request: PetActionRequest) {
+        if kind == .interaction {
+            invalidateAmbientActionTimers()
+        }
         activeSchedulerKind = kind
         activeActionLayer = request.layer
         activeActionPriority = request.priority
@@ -1388,21 +1431,28 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         switch playback {
         case .frameClip:
             let frameInterval = timingPolicy.frameInterval(for: animation, frameCount: petView.frameCount(for: animation))
-            animationTimer = Timer.scheduledTimer(withTimeInterval: frameInterval, repeats: true) { [weak self] timer in
-                guard let self, let petView = self.petView else {
-                    timer.invalidate()
-                    return
-                }
+            animationTimer = Timer.scheduledTimer(withTimeInterval: frameInterval, repeats: true) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self, let petView = self.petView else {
+                        self?.animationTimer?.invalidate()
+                        self?.animationTimer = nil
+                        return
+                    }
 
-                if petView.advanceAnimationFrame() {
-                    timer.invalidate()
-                    self.playNextActionSuiteStep()
+                    if petView.advanceAnimationFrame() {
+                        self.animationTimer?.invalidate()
+                        self.animationTimer = nil
+                        self.playNextActionSuiteStep()
+                    }
                 }
             }
         case .rigMotion(let duration):
-            animationTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] timer in
-                timer.invalidate()
-                self?.playNextActionSuiteStep()
+            animationTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
+                Task { @MainActor in
+                    self?.animationTimer?.invalidate()
+                    self?.animationTimer = nil
+                    self?.playNextActionSuiteStep()
+                }
             }
         }
     }
@@ -1477,12 +1527,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func stopScheduledAndActiveActions() {
-        microActionTimer?.invalidate()
-        microActionTimer = nil
-        smallActionTimer?.invalidate()
-        smallActionTimer = nil
-        largeActionTimer?.invalidate()
-        largeActionTimer = nil
+        invalidateAmbientActionTimers()
         animationTimer?.invalidate()
         animationTimer = nil
         petView?.stopCurrentAnimation()
@@ -1503,15 +1548,18 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
         isHovering = true
         lastInteractionAt = Date()
-        if let activeActionLayer, activeActionLayer != .micro {
-            largeActionTimer?.invalidate()
-            largeActionTimer = nil
+        switch runtimeSchedulingPolicy.hoverBeginDecision(
+            activeSchedulerKind: activeSchedulerKind,
+            activeActionLayer: activeActionLayer
+        ) {
+        case .deferToActiveInteraction:
+            invalidateAmbientActionTimers()
             return
+        case .startHoverInteraction:
+            stopScheduledAndActiveActions()
+            hoverOwnsCurrentInteraction = true
+            requestActionSuite(hoverSuite(), kind: .interaction, sourcePresentationState: currentPresentationState)
         }
-
-        stopScheduledAndActiveActions()
-        hoverOwnsCurrentInteraction = true
-        requestActionSuite(hoverSuite(), kind: .interaction, sourcePresentationState: currentPresentationState)
     }
 
     private func endHovering() {
@@ -1665,7 +1713,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-let app = NSApplication.shared
-private let delegate = AppDelegate()
-app.delegate = delegate
-app.run()
+MainActor.assumeIsolated {
+    let app = NSApplication.shared
+    let delegate = AppDelegate()
+    app.delegate = delegate
+    app.run()
+}

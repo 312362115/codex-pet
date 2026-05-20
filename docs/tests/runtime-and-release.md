@@ -33,7 +33,7 @@ PASS rig assets
 - 默认窗口位置策略：启动落在当前屏幕可见区域左下角，并保留 24px 边距。
 - rig 渲染模式策略：`breathing`、`hairSway`、`weightShift`、`shoulderRelax`、`cursorLook`、`dragReleaseSettle`、`wakeUp` 走 SpriteKit rig；旧脸部兼容枚举不走 rig。
 - rig 资产策略：manifest 只能引用当前允许的 `body/head` 部件；`body` 必须是 root，`head` 必须 parent 到 `body`；拒绝脸部、眼睛、头发、眼镜等高风险覆盖层；透明像素隐藏 RGB 必须归零。
-- 统一 timeline 的冲突决策：小动作排队、可见动作打断微动作、大动作丢弃、hover 节流、drag 抑制、过期状态动作丢弃。
+- 统一 timeline / runtime 调度冲突决策：小动作排队、可见动作打断微动作、hover 打断 ambient 小/大动作但不打断 active interaction、大动作丢弃、hover 节流、drag 抑制、过期状态动作丢弃；启动补挂 ambient timer 时不能与状态切换 interaction 重叠。
 
 展示状态停留姿态预期：
 

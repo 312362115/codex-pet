@@ -47,6 +47,7 @@
 - 已完成整套动作表情复核：`failed`、`review`、`waiting`、`idle` 当前都直接复用同一基础表情，语义区分不足；`adjust-glasses`、`tap-keyboard`、`thinking`、`check-notes` 等工作动作已有姿态变化，但表情仍偏接近；`wake-up` 中段存在补间导致的脸部轻微虚影。
 - 已完成第一版表情一体关键帧接入：新增 `assets/reference/generated/expression-keyframes-v1.png`，用于 `failed`、`review`、`waiting`、`nod` 和 `wake-up` 等语义状态；动态挥手/伸展等跨源补间会产生重影，第一版暂不接入这些动作。
 - 已修正动作调度过保守的问题：首轮小动作从 24-40 秒缩短为 8-14 秒，首轮大动作从 140-220 秒缩短为 24-38 秒；等待/待机小动作池扩展为多动作轮转，避免实际运行只在少数动作里循环。
+- 已修正 runtime 定时冲突：启动后只有空闲时才补挂 ambient timer，interaction 播放前会清理 ambient timer；hover 会打断 ambient 微/小/大动作，但不会二次抢占正在执行的 interaction。
 - 下一步：如需进一步提升动态动作表情，需要重新生成同一动作内部连续关键帧，而不是把不同源图交叉补间。
 
 ## 表情一体化重生成候选

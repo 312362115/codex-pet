@@ -229,6 +229,41 @@ public enum PetActionLayer: String, Hashable, Sendable {
     case debug
 }
 
+public enum PetSchedulerKind: String, Hashable, Sendable {
+    case micro
+    case small
+    case large
+    case interaction
+}
+
+public enum PetHoverBeginDecision: Equatable, Sendable {
+    case startHoverInteraction
+    case deferToActiveInteraction
+}
+
+public struct PetRuntimeSchedulingPolicy: Sendable {
+    public init() {}
+
+    public func hoverBeginDecision(
+        activeSchedulerKind: PetSchedulerKind?,
+        activeActionLayer: PetActionLayer?
+    ) -> PetHoverBeginDecision {
+        if activeSchedulerKind == .interaction || activeActionLayer == .interaction {
+            return .deferToActiveInteraction
+        }
+        return .startHoverInteraction
+    }
+
+    public func shouldScheduleAmbientActions(
+        isDragging: Bool,
+        isHovering: Bool,
+        hasActiveAction: Bool,
+        hasValidAmbientTimer: Bool
+    ) -> Bool {
+        !isDragging && !isHovering && !hasActiveAction && !hasValidAmbientTimer
+    }
+}
+
 public enum PetActionPriority: Int, Hashable, Sendable {
     case p0 = 0
     case p1 = 1

@@ -351,5 +351,22 @@ struct CodexActivityStatusTests {
             request: PetActionRequest(animation: .waving, sourcePresentationState: .waitingAttentive, submittedAt: now),
             state: microBusyState
         ).outcome == .playNow)
+
+        let runtimeSchedulingPolicy = PetRuntimeSchedulingPolicy()
+        #expect(runtimeSchedulingPolicy.hoverBeginDecision(activeSchedulerKind: .small, activeActionLayer: .small) == .startHoverInteraction)
+        #expect(runtimeSchedulingPolicy.hoverBeginDecision(activeSchedulerKind: .large, activeActionLayer: .large) == .startHoverInteraction)
+        #expect(runtimeSchedulingPolicy.hoverBeginDecision(activeSchedulerKind: .interaction, activeActionLayer: .interaction) == .deferToActiveInteraction)
+        #expect(runtimeSchedulingPolicy.shouldScheduleAmbientActions(
+            isDragging: false,
+            isHovering: false,
+            hasActiveAction: true,
+            hasValidAmbientTimer: false
+        ) == false)
+        #expect(runtimeSchedulingPolicy.shouldScheduleAmbientActions(
+            isDragging: false,
+            isHovering: false,
+            hasActiveAction: false,
+            hasValidAmbientTimer: false
+        ))
     }
 }
