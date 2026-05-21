@@ -94,6 +94,76 @@ public extension CodexActivityStatus {
     }
 }
 
+public enum PetBehaviorProfile: String, Hashable, Sendable {
+    case officeCompanion
+    case manekiNeko
+}
+
+public struct PetAssetSpec: Equatable, Sendable {
+    public let id: String
+    public let displayName: String
+    public let highResolutionFrameDirectoryName: String
+    public let spriteSheetDirectoryName: String
+    public let rigAssetDirectoryName: String?
+    public let behaviorProfile: PetBehaviorProfile
+
+    public init(
+        id: String,
+        displayName: String,
+        highResolutionFrameDirectoryName: String,
+        spriteSheetDirectoryName: String,
+        rigAssetDirectoryName: String? = nil,
+        behaviorProfile: PetBehaviorProfile = .officeCompanion
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.highResolutionFrameDirectoryName = highResolutionFrameDirectoryName
+        self.spriteSheetDirectoryName = spriteSheetDirectoryName
+        self.rigAssetDirectoryName = rigAssetDirectoryName
+        self.behaviorProfile = behaviorProfile
+    }
+}
+
+public struct PetCatalog: Sendable {
+    public let pets: [PetAssetSpec]
+
+    public init(pets: [PetAssetSpec] = Self.defaultPets) {
+        self.pets = pets.isEmpty ? Self.defaultPets : pets
+    }
+
+    public var defaultPet: PetAssetSpec {
+        pets[0]
+    }
+
+    public func pet(withID id: String) -> PetAssetSpec? {
+        pets.first { $0.id == id }
+    }
+
+    public func selectedPet(for id: String?) -> PetAssetSpec {
+        guard let id, let pet = pet(withID: id) else {
+            return defaultPet
+        }
+        return pet
+    }
+
+    public static let defaultPets: [PetAssetSpec] = [
+        PetAssetSpec(
+            id: "lingxi-ol",
+            displayName: "Lingxi OL",
+            highResolutionFrameDirectoryName: "lingxi-ol-hires",
+            spriteSheetDirectoryName: "lingxi-ol",
+            rigAssetDirectoryName: "lingxi-ol-rig"
+        ),
+        PetAssetSpec(
+            id: "maneki-neko",
+            displayName: "招财猫",
+            highResolutionFrameDirectoryName: "maneki-neko-hires",
+            spriteSheetDirectoryName: "maneki-neko",
+            behaviorProfile: .manekiNeko
+        )
+    ]
+}
+
 public struct PetPresentationTransitionPolicy: Sendable {
     public init() {}
 
@@ -340,7 +410,7 @@ public struct PetActionCatalog: Sendable {
         PetActionDescriptor(animation: .review, layer: .pose, priority: .p2, allowedStatuses: [.working], expressions: [.focused], cooldown: 0...0, canQueue: false),
         PetActionDescriptor(animation: .failed, layer: .pose, priority: .p2, allowedStatuses: [.offline], expressions: [.error], cooldown: 0...0, canQueue: false),
         PetActionDescriptor(animation: .blink, layer: .expression, priority: .p3, allowedStatuses: activeStatuses, expressions: [.neutral, .focused], cooldown: 3...8, canQueue: false, defaultEligible: false),
-        PetActionDescriptor(animation: .slowBlink, layer: .expression, priority: .p3, allowedStatuses: [.waiting, .offline], expressions: [.tired, .neutral], cooldown: 20...45, canQueue: false, defaultEligible: false),
+        PetActionDescriptor(animation: .slowBlink, layer: .expression, priority: .p3, allowedStatuses: allStatuses, expressions: [.happy, .tired, .neutral], cooldown: 20...45, canQueue: false, defaultEligible: false),
         PetActionDescriptor(animation: .eyeShiftLeft, layer: .expression, priority: .p3, allowedStatuses: activeStatuses, expressions: [.neutral, .focused, .curious], cooldown: 8...20, canQueue: false, defaultEligible: false),
         PetActionDescriptor(animation: .eyeShiftRight, layer: .expression, priority: .p3, allowedStatuses: activeStatuses, expressions: [.neutral, .focused, .curious], cooldown: 8...20, canQueue: false, defaultEligible: false),
         PetActionDescriptor(animation: .focusTighten, layer: .expression, priority: .p1, allowedStatuses: [.working], expressions: [.focused], cooldown: 8...18, canQueue: false, defaultEligible: false),
@@ -846,14 +916,31 @@ public struct PetRenderModePolicy {
 }
 
 public struct PetAmbientActionPolicy {
-    public init() {}
+    public let profile: PetBehaviorProfile
+
+    public init(profile: PetBehaviorProfile = .officeCompanion) {
+        self.profile = profile
+    }
 
     public func restingAnimation(for presentationState: PetPresentationState) -> PetAnimation {
+        if profile == .manekiNeko {
+            switch presentationState {
+            case .offlineRest:
+                return .failed
+            case .idleRelaxed, .reviewFocused, .toolRunning, .waitingAttentive, .longWorkTired:
+                return .waiting
+            case .blockedConcerned:
+                return .failed
+            case .completedCalm:
+                return .nod
+            }
+        }
+
         switch presentationState {
         case .offlineRest:
             return .failed
         case .idleRelaxed:
-            return .waiting
+            return .idle
         case .reviewFocused:
             return .review
         case .toolRunning:
@@ -906,6 +993,23 @@ public struct PetAmbientActionPolicy {
     }
 
     public func microActionSuites(for presentationState: PetPresentationState) -> [[PetAnimation]] {
+        if profile == .manekiNeko {
+            switch presentationState {
+            case .offlineRest:
+                return []
+            case .idleRelaxed, .waitingAttentive:
+                return [[.hairSway], [.breathing], [.slowBlink]]
+            case .reviewFocused, .toolRunning:
+                return [[.hairSway], [.breathing], [.slowBlink]]
+            case .blockedConcerned:
+                return [[.breathing], [.slowBlink]]
+            case .completedCalm:
+                return [[.hairSway], [.breathing], [.slowBlink]]
+            case .longWorkTired:
+                return [[.hairSway], [.breathing], [.slowBlink]]
+            }
+        }
+
         switch presentationState {
         case .offlineRest:
             return []
@@ -931,15 +1035,32 @@ public struct PetAmbientActionPolicy {
     }
 
     public func smallActionSuites(for presentationState: PetPresentationState) -> [[PetAnimation]] {
+        if profile == .manekiNeko {
+            switch presentationState {
+            case .offlineRest:
+                return []
+            case .idleRelaxed, .waitingAttentive:
+                return [[.waving], [.waving], [.cursorLook], [.nod]]
+            case .reviewFocused, .toolRunning:
+                return [[.cursorLook], [.glanceLeft], [.glanceRight], [.nod]]
+            case .blockedConcerned:
+                return [[.glanceLeft], [.glanceRight]]
+            case .completedCalm:
+                return [[.waving], [.nod]]
+            case .longWorkTired:
+                return [[.glanceLeft], [.glanceRight], [.nod]]
+            }
+        }
+
         switch presentationState {
         case .offlineRest:
             return []
         case .idleRelaxed:
-            return [[.waving], [.nod], [.cursorLook], [.tinyHandAdjust]]
+            return [[.waving], [.nod], [.cursorLook], [.tinyHandAdjust], [.adjustOutfit]]
         case .waitingAttentive:
             return [[.cursorLook], [.waving], [.nod], [.tinyHandAdjust], [.adjustOutfit]]
         case .reviewFocused:
-            return [[.adjustGlasses], [.thinking], [.nod], [.checkNotes]]
+            return [[.adjustGlasses], [.thinking], [.nod], [.tapKeyboard], [.checkNotes], [.stretchWrist]]
         case .toolRunning:
             return [[.tapKeyboard], [.checkNotes], [.focusShift]]
         case .blockedConcerned:
@@ -956,15 +1077,32 @@ public struct PetAmbientActionPolicy {
     }
 
     public func largeActionSuites(for presentationState: PetPresentationState) -> [[PetAnimation]] {
+        if profile == .manekiNeko {
+            switch presentationState {
+            case .offlineRest:
+                return []
+            case .idleRelaxed, .waitingAttentive:
+                return [[.lookAround], [.glanceLeft], [.glanceRight]]
+            case .reviewFocused, .toolRunning:
+                return [[.glanceLeft], [.glanceRight], [.lookAround]]
+            case .blockedConcerned:
+                return [[.glanceLeft], [.glanceRight]]
+            case .completedCalm:
+                return [[.glanceLeft], [.glanceRight], [.lookAround]]
+            case .longWorkTired:
+                return [[.lookAround]]
+            }
+        }
+
         switch presentationState {
         case .offlineRest:
             return []
         case .idleRelaxed:
             return [[.lookAround], [.postureReset], [.stretch], [.stepAside]]
         case .waitingAttentive:
-            return [[.glanceLeft], [.glanceRight], [.adjustOutfit], [.lookAround]]
+            return [[.glanceLeft], [.glanceRight], [.adjustOutfit], [.lookAround], [.fixPosture], [.stepAside], [.postureReset], [.stretch]]
         case .reviewFocused:
-            return [[.glanceLeft], [.glanceRight], [.focusShift], [.fixPosture], [.postureReset]]
+            return [[.glanceLeft], [.glanceRight], [.focusShift], [.fixPosture], [.postureReset], [.stretch]]
         case .toolRunning:
             return [[.focusShift], [.fixPosture]]
         case .blockedConcerned:
@@ -981,6 +1119,23 @@ public struct PetAmbientActionPolicy {
     }
 
     public func hoverActionSuites(for presentationState: PetPresentationState) -> [[PetAnimation]] {
+        if profile == .manekiNeko {
+            switch presentationState {
+            case .offlineRest:
+                return [[.failed]]
+            case .idleRelaxed, .waitingAttentive:
+                return [[.waving], [.cursorLook], [.hairSway], [.slowBlink]]
+            case .reviewFocused, .toolRunning:
+                return [[.cursorLook], [.glanceLeft], [.glanceRight], [.slowBlink]]
+            case .blockedConcerned:
+                return [[.glanceLeft], [.glanceRight]]
+            case .completedCalm:
+                return [[.waving], [.nod], [.slowBlink]]
+            case .longWorkTired:
+                return [[.lookAround], [.hairSway], [.slowBlink]]
+            }
+        }
+
         switch presentationState {
         case .offlineRest:
             return [[.failed]]
@@ -1021,25 +1176,46 @@ public struct PetSchedulerIntervalRange: Equatable, Sendable {
 }
 
 public struct PetActionSchedulerIntervalPolicy: Sendable {
-    public init() {}
+    public let profile: PetBehaviorProfile
+
+    public init(profile: PetBehaviorProfile = .officeCompanion) {
+        self.profile = profile
+    }
 
     public func smallActionIntervalRange(
         for presentationState: PetPresentationState,
         initialDelay: Bool
     ) -> PetSchedulerIntervalRange {
+        if profile == .manekiNeko {
+            if initialDelay {
+                return PetSchedulerIntervalRange(3, 6)
+            }
+
+            switch presentationState {
+            case .offlineRest:
+                return PetSchedulerIntervalRange(45, 90)
+            case .reviewFocused, .toolRunning:
+                return PetSchedulerIntervalRange(14, 24)
+            case .blockedConcerned, .completedCalm, .longWorkTired:
+                return PetSchedulerIntervalRange(16, 30)
+            case .idleRelaxed, .waitingAttentive:
+                return PetSchedulerIntervalRange(12, 22)
+            }
+        }
+
         if initialDelay {
-            return PetSchedulerIntervalRange(8, 14)
+            return PetSchedulerIntervalRange(24, 36)
         }
 
         switch presentationState {
         case .offlineRest:
             return PetSchedulerIntervalRange(75, 140)
         case .reviewFocused, .toolRunning:
-            return PetSchedulerIntervalRange(20, 36)
+            return PetSchedulerIntervalRange(45, 75)
         case .blockedConcerned, .completedCalm, .longWorkTired:
-            return PetSchedulerIntervalRange(24, 46)
+            return PetSchedulerIntervalRange(50, 90)
         case .idleRelaxed, .waitingAttentive:
-            return PetSchedulerIntervalRange(22, 42)
+            return PetSchedulerIntervalRange(55, 90)
         }
     }
 
@@ -1047,19 +1223,36 @@ public struct PetActionSchedulerIntervalPolicy: Sendable {
         for presentationState: PetPresentationState,
         initialDelay: Bool
     ) -> PetSchedulerIntervalRange {
+        if profile == .manekiNeko {
+            if initialDelay {
+                return PetSchedulerIntervalRange(2, 4)
+            }
+
+            switch presentationState {
+            case .offlineRest:
+                return PetSchedulerIntervalRange(45, 90)
+            case .reviewFocused, .toolRunning:
+                return PetSchedulerIntervalRange(8, 14)
+            case .blockedConcerned, .completedCalm, .longWorkTired:
+                return PetSchedulerIntervalRange(10, 18)
+            case .idleRelaxed, .waitingAttentive:
+                return PetSchedulerIntervalRange(7, 12)
+            }
+        }
+
         if initialDelay {
-            return PetSchedulerIntervalRange(5, 9)
+            return PetSchedulerIntervalRange(10, 16)
         }
 
         switch presentationState {
         case .offlineRest:
             return PetSchedulerIntervalRange(60, 120)
         case .reviewFocused, .toolRunning:
-            return PetSchedulerIntervalRange(10, 20)
+            return PetSchedulerIntervalRange(22, 38)
         case .blockedConcerned, .completedCalm, .longWorkTired:
-            return PetSchedulerIntervalRange(18, 36)
+            return PetSchedulerIntervalRange(30, 50)
         case .idleRelaxed, .waitingAttentive:
-            return PetSchedulerIntervalRange(12, 24)
+            return PetSchedulerIntervalRange(28, 46)
         }
     }
 
@@ -1067,19 +1260,36 @@ public struct PetActionSchedulerIntervalPolicy: Sendable {
         for presentationState: PetPresentationState,
         initialDelay: Bool
     ) -> PetSchedulerIntervalRange {
+        if profile == .manekiNeko {
+            if initialDelay {
+                return PetSchedulerIntervalRange(8, 14)
+            }
+
+            switch presentationState {
+            case .offlineRest:
+                return PetSchedulerIntervalRange(90, 160)
+            case .reviewFocused, .toolRunning:
+                return PetSchedulerIntervalRange(32, 55)
+            case .blockedConcerned, .completedCalm, .longWorkTired:
+                return PetSchedulerIntervalRange(38, 70)
+            case .idleRelaxed, .waitingAttentive:
+                return PetSchedulerIntervalRange(30, 50)
+            }
+        }
+
         if initialDelay {
-            return PetSchedulerIntervalRange(24, 38)
+            return PetSchedulerIntervalRange(75, 110)
         }
 
         switch presentationState {
         case .offlineRest:
-            return PetSchedulerIntervalRange(120, 220)
+            return PetSchedulerIntervalRange(180, 300)
         case .reviewFocused, .toolRunning:
-            return PetSchedulerIntervalRange(70, 120)
+            return PetSchedulerIntervalRange(180, 300)
         case .blockedConcerned, .completedCalm, .longWorkTired:
-            return PetSchedulerIntervalRange(90, 150)
+            return PetSchedulerIntervalRange(150, 240)
         case .idleRelaxed, .waitingAttentive:
-            return PetSchedulerIntervalRange(60, 110)
+            return PetSchedulerIntervalRange(150, 240)
         }
     }
 }

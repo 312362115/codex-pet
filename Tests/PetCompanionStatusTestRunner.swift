@@ -43,6 +43,14 @@ struct StatusTestRunner {
         expect(mapper.animation(for: .working) == .running, "working should map to running animation")
         expect(mapper.animation(for: .waiting) == .waiting, "waiting should map to waiting animation")
 
+        let petCatalog = PetCatalog()
+        expect(petCatalog.defaultPet.id == "lingxi-ol", "Lingxi OL should remain the default pet")
+        expect(petCatalog.pets.map(\.id) == ["lingxi-ol", "maneki-neko"], "catalog should expose selectable pets in menu order")
+        expect(petCatalog.pet(withID: "maneki-neko")?.displayName == "招财猫", "catalog should include the Maneki Neko pet")
+        expect(petCatalog.defaultPet.behaviorProfile == .officeCompanion, "Lingxi OL should use the office companion behavior profile")
+        expect(petCatalog.pet(withID: "maneki-neko")?.behaviorProfile == .manekiNeko, "Maneki Neko should switch to the lucky cat behavior profile")
+        expect(petCatalog.selectedPet(for: "missing").id == "lingxi-ol", "unknown persisted pet ids should fall back to the default pet")
+
         expect(phaseClassifier.classify(CodexMetadataSnapshot(
             codexIsRunning: false,
             latestActivityDate: now,
@@ -195,7 +203,7 @@ struct StatusTestRunner {
         expect(renderModePolicy.renderMode(for: .shoulderRelax) == .spriteKitRigMotion, "shoulder relax should use the SpriteKit rig body layer")
         expect(renderModePolicy.renderMode(for: .hairSway) == .spriteKitRigMotion, "hair sway should use the SpriteKit head proxy until hair parts are clean")
         expect(renderModePolicy.renderMode(for: .blink) == .frameClip, "blink should not use rig until it is regenerated as an integrated full-action expression")
-        expect(renderModePolicy.renderMode(for: .slowBlink) == .frameClip, "slow blink should not use rig until it is regenerated as an integrated full-action expression")
+        expect(renderModePolicy.renderMode(for: .slowBlink) == .frameClip, "slow blink should remain a full-frame PNG clip")
         expect(renderModePolicy.renderMode(for: .eyeShiftLeft) == .frameClip, "left eye shift should use PNG until face rig assets are clean")
         expect(renderModePolicy.renderMode(for: .eyeShiftRight) == .frameClip, "right eye shift should use PNG until face rig assets are clean")
         expect(renderModePolicy.renderMode(for: .cursorLook) == .spriteKitRigMotion, "cursor look should use the SpriteKit head layer")
@@ -220,6 +228,7 @@ struct StatusTestRunner {
         expect(ambientPolicy.restingAnimation(for: .working) == .review, "working should rest in a focused pose")
         expect(ambientPolicy.restingAnimation(for: .waiting) == .waiting, "waiting should rest in a waiting pose")
         expect(ambientPolicy.restingAnimation(for: .offline) == .failed, "offline should rest in failed pose")
+        expect(ambientPolicy.restingAnimation(for: .idleRelaxed) == .idle, "idle relaxed should use the dedicated idle pose instead of reusing waiting")
         expect(ambientPolicy.restingAnimation(for: .toolRunning) == .tapKeyboard, "tool-running should have a distinct final display pose")
         expect(ambientPolicy.restingAnimation(for: .blockedConcerned) == .failed, "blocked should settle into a concerned failed-like pose")
         expect(ambientPolicy.restingAnimation(for: .completedCalm) == .nod, "completed should settle into a calm completion pose")
@@ -232,17 +241,31 @@ struct StatusTestRunner {
             "waiting should include attentive rig-backed micro action suites"
         )
         expect(ambientPolicy.microActionSuites(for: .idleRelaxed).contains([.weightShift]), "idle relaxed should keep idle weight shifts")
-        expect(ambientPolicy.ambientSuites(for: .working) == [[.adjustGlasses], [.thinking], [.nod], [.checkNotes]], "working should use focused short action suites")
+        expect(
+            ambientPolicy.ambientSuites(for: .working) == [[.adjustGlasses], [.thinking], [.nod], [.tapKeyboard], [.checkNotes], [.stretchWrist]],
+            "working should rotate through all focused short action suites"
+        )
         expect(ambientPolicy.ambientSuites(for: .waiting) == [[.cursorLook], [.waving], [.nod], [.tinyHandAdjust], [.adjustOutfit]], "waiting should rotate more visible action clips without legacy face-overlay clips")
         expect(ambientPolicy.ambientSuites(for: .offline) == [], "offline should rest without extra ambient actions")
-        expect(ambientPolicy.smallActionSuites(for: .idleRelaxed) == [[.waving], [.nod], [.cursorLook], [.tinyHandAdjust]], "idle relaxed should not be limited to one repeated wave")
+        expect(ambientPolicy.smallActionSuites(for: .idleRelaxed) == [[.waving], [.nod], [.cursorLook], [.tinyHandAdjust], [.adjustOutfit]], "idle relaxed should not be limited to one repeated wave")
         expect(ambientPolicy.ambientAnimations(for: .waiting).contains(.waving), "waiting should include visible short actions")
         expect(ambientPolicy.ambientAnimations(for: .waiting).contains(.adjustOutfit), "waiting should expose more generated action frames in normal runtime")
         expect(!ambientPolicy.ambientAnimations(for: .waiting).contains(.turning), "waiting should avoid inconsistent turntable frames")
         expect(!ambientPolicy.largeActionSuites(for: .working).flatMap { $0 }.contains(.turning), "working should avoid full turntable in default large actions")
         expect(!ambientPolicy.largeActionSuites(for: .waiting).flatMap { $0 }.contains(.turning), "waiting should avoid full turntable in default large actions")
-        expect(ambientPolicy.largeActionSuites(for: .working) == [[.glanceLeft], [.glanceRight], [.focusShift], [.fixPosture], [.postureReset]], "working large actions should include attention and posture clips")
-        expect(ambientPolicy.largeActionSuites(for: .waiting) == [[.glanceLeft], [.glanceRight], [.adjustOutfit], [.lookAround]], "waiting large actions should include attentive exploratory clips")
+        expect(ambientPolicy.largeActionSuites(for: .working) == [[.glanceLeft], [.glanceRight], [.focusShift], [.fixPosture], [.postureReset], [.stretch]], "working large actions should include attention, posture, and stretch clips")
+        expect(
+            ambientPolicy.largeActionSuites(for: .waiting) == [[.glanceLeft], [.glanceRight], [.adjustOutfit], [.lookAround], [.fixPosture], [.stepAside], [.postureReset], [.stretch]],
+            "waiting large actions should include the generated exploratory and posture clips"
+        )
+        let waitingVisibleActions = Set(
+            ambientPolicy.smallActionSuites(for: .waitingAttentive).flatMap { $0 }
+                + ambientPolicy.largeActionSuites(for: .waitingAttentive).flatMap { $0 }
+        )
+        expect(
+            [.cursorLook, .waving, .nod, .tinyHandAdjust, .adjustOutfit, .glanceLeft, .glanceRight, .lookAround, .fixPosture, .stepAside, .postureReset, .stretch].allSatisfy(waitingVisibleActions.contains),
+            "waiting should expose the broad generated action set in normal ambient scheduling"
+        )
         expect(ambientPolicy.largeActionSuites(for: .offline) == [], "offline should avoid large ambient actions")
         expect(ambientPolicy.hoverActionSuites(for: .working) == [[.adjustGlasses], [.thinking]], "working hover should avoid legacy face-overlay clips")
         expect(ambientPolicy.hoverActionSuites(for: .waiting) == [[.cursorLook], [.waving]], "waiting hover should avoid legacy face-overlay clips")
@@ -254,26 +277,78 @@ struct StatusTestRunner {
 
         let schedulerIntervalPolicy = PetActionSchedulerIntervalPolicy()
         expect(
-            schedulerIntervalPolicy.microActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(5, 9),
-            "initial micro actions should become visible quickly"
+            schedulerIntervalPolicy.microActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(10, 16),
+            "initial micro actions should not start a dense motion cluster"
         )
         expect(
-            schedulerIntervalPolicy.smallActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(8, 14),
-            "initial small actions should not wait half a minute"
+            schedulerIntervalPolicy.smallActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(24, 36),
+            "initial small actions should be visible without making the pet constantly move"
         )
         expect(
-            schedulerIntervalPolicy.largeActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(24, 38),
-            "initial large actions should be discoverable in the first minute"
+            schedulerIntervalPolicy.largeActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(75, 110),
+            "initial large actions should not stack with startup micro and small actions"
         )
         expect(
-            schedulerIntervalPolicy.largeActionIntervalRange(for: .idleRelaxed, initialDelay: false) == PetSchedulerIntervalRange(60, 110),
-            "idle large actions should recur often enough to be noticed"
+            schedulerIntervalPolicy.microActionIntervalRange(for: .waitingAttentive, initialDelay: false) == PetSchedulerIntervalRange(28, 46),
+            "waiting micro actions should leave quiet gaps between subtle motions"
+        )
+        expect(
+            schedulerIntervalPolicy.smallActionIntervalRange(for: .waitingAttentive, initialDelay: false) == PetSchedulerIntervalRange(55, 90),
+            "waiting small actions should use more clips over time without constant motion"
+        )
+        expect(
+            schedulerIntervalPolicy.largeActionIntervalRange(for: .idleRelaxed, initialDelay: false) == PetSchedulerIntervalRange(150, 240),
+            "idle large actions should be occasional instead of continuous"
+        )
+        expect(
+            schedulerIntervalPolicy.largeActionIntervalRange(for: .reviewFocused, initialDelay: false) == PetSchedulerIntervalRange(180, 300),
+            "working large actions should remain low frequency"
+        )
+
+        let manekiAmbientPolicy = PetAmbientActionPolicy(profile: .manekiNeko)
+        expect(
+            manekiAmbientPolicy.restingAnimation(for: .toolRunning) == .waiting,
+            "Maneki Neko should settle into compact cat poses instead of tool-specific work poses"
+        )
+        expect(
+            manekiAmbientPolicy.microActionSuites(for: .waitingAttentive) == [[.hairSway], [.breathing], [.slowBlink]],
+            "Maneki Neko waiting micro actions should prioritize tail sway, body motion, and a subtle slow blink"
+        )
+        expect(
+            manekiAmbientPolicy.smallActionSuites(for: .waitingAttentive) == [[.waving], [.waving], [.cursorLook], [.nod]],
+            "Maneki Neko waiting small actions should prioritize repeated beckoning"
+        )
+        expect(
+            manekiAmbientPolicy.largeActionSuites(for: .waitingAttentive) == [[.lookAround], [.glanceLeft], [.glanceRight]],
+            "Maneki Neko waiting large actions should include left/right head turns"
+        )
+        expect(
+            manekiAmbientPolicy.hoverActionSuites(for: .waitingAttentive) == [[.waving], [.cursorLook], [.hairSway], [.slowBlink]],
+            "Maneki Neko hover should expose waving, head turns, tail motion, and the slow blink"
+        )
+
+        let manekiSchedulerIntervalPolicy = PetActionSchedulerIntervalPolicy(profile: .manekiNeko)
+        expect(
+            manekiSchedulerIntervalPolicy.microActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(2, 4),
+            "Maneki Neko should start tail/body micro motion immediately after switching"
+        )
+        expect(
+            manekiSchedulerIntervalPolicy.smallActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(3, 6),
+            "Maneki Neko should begin beckoning shortly after switching"
+        )
+        expect(
+            manekiSchedulerIntervalPolicy.largeActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(8, 14),
+            "Maneki Neko should show left/right attention early enough to notice"
+        )
+        expect(
+            manekiSchedulerIntervalPolicy.smallActionIntervalRange(for: .waitingAttentive, initialDelay: false) == PetSchedulerIntervalRange(12, 22),
+            "Maneki Neko should beckon more often than the human companion"
         )
 
         let catalog = PetActionCatalog()
         expect(catalog.descriptor(for: .blink)?.layer == .expression, "blink should remain a legacy expression descriptor")
         expect(catalog.descriptor(for: .blink)?.defaultEligible == false, "blink should not be scheduled separately from full action frames")
-        expect(catalog.descriptor(for: .slowBlink)?.defaultEligible == false, "slow blink should not be scheduled separately from full action frames")
+        expect(catalog.descriptor(for: .slowBlink)?.defaultEligible == false, "slow blink should stay out of default catalog scheduling and be profile-selected when assets exist")
         expect(catalog.descriptor(for: .breathing)?.layer == .micro, "breathing should be a micro action")
         expect(catalog.descriptor(for: .adjustGlasses)?.layer == .small, "adjust glasses should be a small action")
         expect(catalog.descriptor(for: .focusShift)?.layer == .medium, "focus shift should be a medium action")

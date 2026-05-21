@@ -77,6 +77,7 @@ echo "==> Packaging CodexPetCompanion $VERSION for $PLATFORM"
 if [ "$rebuild_assets" -eq 1 ]; then
   echo "==> Rebuilding runtime assets"
   "$ROOT/scripts/build-shirt-skirt-assets.py"
+  "$ROOT/scripts/build-maneki-neko-assets.py"
   "$ROOT/scripts/build-rig-assets.py"
 fi
 
@@ -105,7 +106,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_SOURCE="$SCRIPT_DIR/CodexPetCompanion.app"
 INSTALL_DIR="${CODEX_PET_INSTALL_DIR:-$HOME/.codex/pet-companion}"
 INSTALLED_APP="$INSTALL_DIR/CodexPetCompanion.app"
+CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
+NATIVE_PET_IDS=("lingxi-ol" "maneki-neko")
 restart_app=1
+install_native_pet=1
 
 usage() {
   cat <<'USAGE'
@@ -114,11 +118,13 @@ Usage: ./install-release.sh [options]
 Install the prebuilt CodexPetCompanion.app from this release package.
 
 Options:
-  --no-restart  Install the app but do not stop/start the running pet.
-  -h, --help    Show this help.
+  --no-restart       Install the app but do not stop/start the running pet.
+  --skip-native-pet  Do not install Codex native pet packages.
+  -h, --help         Show this help.
 
 Environment:
   CODEX_PET_INSTALL_DIR  Override install directory. Default: ~/.codex/pet-companion
+  CODEX_HOME             Override Codex home directory for native pets. Default: ~/.codex
 USAGE
 }
 
@@ -126,6 +132,9 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --no-restart)
       restart_app=0
+      ;;
+    --skip-native-pet)
+      install_native_pet=0
       ;;
     -h|--help)
       usage
@@ -149,6 +158,23 @@ echo "==> Installing to $INSTALLED_APP"
 mkdir -p "$INSTALL_DIR"
 rm -rf "$INSTALLED_APP"
 ditto "$APP_SOURCE" "$INSTALLED_APP"
+
+if [ "$install_native_pet" -eq 1 ]; then
+  for pet_id in "${NATIVE_PET_IDS[@]}"; do
+    native_pet_source="$APP_SOURCE/Contents/Resources/$pet_id"
+    native_pet_target="$CODEX_HOME_DIR/pets/$pet_id"
+    if [ ! -d "$native_pet_source" ]; then
+      echo "Cannot find native pet package at $native_pet_source." >&2
+      exit 1
+    fi
+    echo "==> Installing $pet_id Codex native pet to $native_pet_target"
+    mkdir -p "$(dirname "$native_pet_target")"
+    rm -rf "$native_pet_target"
+    ditto "$native_pet_source" "$native_pet_target"
+  done
+  echo "==> Codex will load native pets as custom:<directory-name> from $CODEX_HOME_DIR/pets"
+  echo "==> If Codex is already running, restart Codex or click Refresh in Settings > Pets."
+fi
 
 if [ "$restart_app" -eq 1 ]; then
   echo "==> Restarting CodexPetCompanion"
@@ -175,6 +201,9 @@ Install:
 
 Custom install directory:
   CODEX_PET_INSTALL_DIR="\$HOME/.codex/pet-companion-dev" ./install-release.sh
+
+Skip Codex native pet install:
+  ./install-release.sh --skip-native-pet
 
 This release package contains a prebuilt CodexPetCompanion.app. It does not
 require cloning the source repository or compiling Swift locally.

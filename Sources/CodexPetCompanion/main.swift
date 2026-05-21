@@ -18,9 +18,10 @@ private enum PetRow: Int {
 }
 
 private struct CompanionConfig {
+    let pet: PetAssetSpec
     let petImagePath: String
     let highResolutionFrameRoot: String
-    let rigAssetRoot: String
+    let rigAssetRoot: String?
     let codexAppPath: String
     let codexHome: String
     let displayWidth: CGFloat
@@ -30,26 +31,33 @@ private struct CompanionConfig {
     let columns: Int
 
     static var standard: CompanionConfig {
+        standard(pet: PetCatalog().defaultPet)
+    }
+
+    static func standard(pet: PetAssetSpec) -> CompanionConfig {
         let resourcePath = Bundle.main.resourcePath ?? ""
-        let bundledFrameRoot = "\(resourcePath)/lingxi-ol-hires"
-        let bundledPetImagePath = "\(resourcePath)/lingxi-ol/spritesheet.webp"
-        let bundledRigAssetRoot = "\(resourcePath)/lingxi-ol-rig"
-        let installedFrameRoot = "/Users/renlongyu/.codex/pet-companion/assets/lingxi-ol-hires"
-        let installedPetImagePath = "/Users/renlongyu/.codex/pets/lingxi-ol/spritesheet.webp"
-        let installedRigAssetRoot = "/Users/renlongyu/.codex/pet-companion/assets/lingxi-ol-rig"
+        let codexHome = "\(NSHomeDirectory())/.codex"
+        let bundledFrameRoot = "\(resourcePath)/\(pet.highResolutionFrameDirectoryName)"
+        let bundledPetImagePath = "\(resourcePath)/\(pet.spriteSheetDirectoryName)/spritesheet.webp"
+        let installedFrameRoot = "\(codexHome)/pet-companion/assets/\(pet.highResolutionFrameDirectoryName)"
+        let installedPetImagePath = "\(codexHome)/pets/\(pet.spriteSheetDirectoryName)/spritesheet.webp"
+        let bundledRigAssetRoot = pet.rigAssetDirectoryName.map { "\(resourcePath)/\($0)" }
+        let installedRigAssetRoot = pet.rigAssetDirectoryName.map { "\(codexHome)/pet-companion/assets/\($0)" }
+        let resolvedRigAssetRoot = [bundledRigAssetRoot, installedRigAssetRoot]
+            .compactMap { $0 }
+            .first { FileManager.default.fileExists(atPath: $0) }
 
         return CompanionConfig(
+            pet: pet,
             petImagePath: FileManager.default.fileExists(atPath: bundledPetImagePath)
                 ? bundledPetImagePath
                 : installedPetImagePath,
             highResolutionFrameRoot: FileManager.default.fileExists(atPath: bundledFrameRoot)
                 ? bundledFrameRoot
                 : installedFrameRoot,
-            rigAssetRoot: FileManager.default.fileExists(atPath: bundledRigAssetRoot)
-                ? bundledRigAssetRoot
-                : installedRigAssetRoot,
+            rigAssetRoot: resolvedRigAssetRoot,
             codexAppPath: "/Applications/Codex.app",
-            codexHome: "\(NSHomeDirectory())/.codex",
+            codexHome: codexHome,
             displayWidth: 576,
             displayHeight: 624,
             cellWidth: 192,
@@ -383,10 +391,12 @@ private struct CodexMetadataReader {
 
 private final class PetFrameProvider {
     private let spriteSheet: SpriteSheet
+    private let config: CompanionConfig
     private let framePolicy = PetAnimationFramePolicy()
     private var highResolutionFrames: [PetAnimation: [CGImage]] = [:]
 
     init(config: CompanionConfig) throws {
+        self.config = config
         self.spriteSheet = try SpriteSheet(path: config.petImagePath, config: config)
         self.highResolutionFrames = Self.loadHighResolutionFrames(config: config, framePolicy: framePolicy)
     }
@@ -404,7 +414,7 @@ private final class PetFrameProvider {
             return frames.count
         }
 
-        return framePolicy.frameCount(for: animation)
+        return config.columns
     }
 
     private static func loadHighResolutionFrames(
@@ -421,6 +431,7 @@ private final class PetFrameProvider {
             (.turning, "turning"),
             (.glanceLeft, "glance-left"),
             (.glanceRight, "glance-right"),
+            (.slowBlink, "slow-blink"),
             (.breathing, "breathing"),
             (.hairSway, "hair-sway"),
             (.weightShift, "weight-shift"),
@@ -564,7 +575,11 @@ private final class PetRigProvider {
     let manifest: PetRigManifest
 
     init?(config: CompanionConfig) {
-        let manifestPath = "\(config.rigAssetRoot)/rig.json"
+        guard let rigAssetRoot = config.rigAssetRoot else {
+            return nil
+        }
+
+        let manifestPath = "\(rigAssetRoot)/rig.json"
         guard FileManager.default.fileExists(atPath: manifestPath),
               let data = FileManager.default.contents(atPath: manifestPath),
               let manifest = try? JSONDecoder().decode(PetRigManifest.self, from: data) else {
@@ -572,12 +587,12 @@ private final class PetRigProvider {
         }
 
         for part in manifest.parts {
-            guard FileManager.default.fileExists(atPath: "\(config.rigAssetRoot)/\(part.image)") else {
+            guard FileManager.default.fileExists(atPath: "\(rigAssetRoot)/\(part.image)") else {
                 return nil
             }
         }
 
-        self.rootPath = config.rigAssetRoot
+        self.rootPath = rigAssetRoot
         self.manifest = manifest
     }
 
@@ -901,23 +916,25 @@ private final class PetView: NSView {
     private let config: CompanionConfig
     private let renderModePolicy = PetRenderModePolicy()
     private let timingPolicy = PetAnimationTimingPolicy()
+    private let ambientPolicy: PetAmbientActionPolicy
     private var rigView: PetRigView?
     private var shouldDrawFrameClip = true
     private var presentationState: PetPresentationState = .waitingAttentive
     private var animation = PetAnimation.waiting
     private var frameIndex = 0
     private let motionPolicy = PetMotionPolicy()
-    private let ambientPolicy = PetAmbientActionPolicy()
     var onDragStart: (() -> Void)?
     var onDragEnd: (() -> Void)?
     var onMouseEnter: (() -> Void)?
     var onMouseExit: (() -> Void)?
     var onContextMenuOpen: (() -> Void)?
+    var contextMenuProvider: (() -> NSMenu)?
     private var trackingArea: NSTrackingArea?
 
-    init(frameProvider: PetFrameProvider, config: CompanionConfig) {
+    init(frameProvider: PetFrameProvider, config: CompanionConfig, ambientPolicy: PetAmbientActionPolicy) {
         self.frameProvider = frameProvider
         self.config = config
+        self.ambientPolicy = ambientPolicy
         super.init(frame: NSRect(x: 0, y: 0, width: config.displayWidth, height: config.displayHeight + 48))
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
@@ -1120,6 +1137,10 @@ private final class PetView: NSView {
 
     override func menu(for event: NSEvent) -> NSMenu? {
         onContextMenuOpen?()
+        if let menu = contextMenuProvider?() {
+            return menu
+        }
+
         let menu = NSMenu()
         let openItem = NSMenuItem(title: "打开 Codex", action: #selector(AppDelegate.openCodex), keyEquivalent: "")
         openItem.target = NSApp.delegate
@@ -1134,7 +1155,10 @@ private final class PetView: NSView {
 
 @MainActor
 private final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let config = CompanionConfig.standard
+    private static let selectedPetDefaultsKey = "CodexPetCompanion.selectedPetID"
+
+    private let petCatalog: PetCatalog
+    private var selectedPet: PetAssetSpec
     private var window: PetWindow?
     private var petView: PetView?
     private var activityReader: CodexActivityReader?
@@ -1157,36 +1181,34 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var queuedSmallAction: [PetAnimation]?
     private var hoverOwnsCurrentInteraction = false
     private var suiteCursors: [String: Int] = [:]
-    private let ambientPolicy = PetAmbientActionPolicy()
+    private var ambientPolicy: PetAmbientActionPolicy
     private let actionCatalog = PetActionCatalog()
     private let actionTimeline = PetActionTimeline()
     private let timingPolicy = PetAnimationTimingPolicy()
-    private let schedulerIntervalPolicy = PetActionSchedulerIntervalPolicy()
+    private var schedulerIntervalPolicy: PetActionSchedulerIntervalPolicy
     private let runtimeSchedulingPolicy = PetRuntimeSchedulingPolicy()
+
+    override init() {
+        let petCatalog = PetCatalog()
+        let selectedPet = petCatalog.selectedPet(
+            for: UserDefaults.standard.string(forKey: Self.selectedPetDefaultsKey)
+        )
+        self.petCatalog = petCatalog
+        self.selectedPet = selectedPet
+        self.ambientPolicy = PetAmbientActionPolicy(profile: selectedPet.behaviorProfile)
+        self.schedulerIntervalPolicy = PetActionSchedulerIntervalPolicy(profile: selectedPet.behaviorProfile)
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
         do {
+            let config = CompanionConfig.standard(pet: selectedPet)
             let frameProvider = try PetFrameProvider(config: config)
-            let petView = PetView(frameProvider: frameProvider, config: config)
+            let petView = makePetView(frameProvider: frameProvider, config: config)
             self.petView = petView
             self.activityReader = CodexActivityReader(config: config)
-            petView.onDragStart = { [weak self] in
-                self?.beginDragging()
-            }
-            petView.onDragEnd = { [weak self] in
-                self?.endDragging()
-            }
-            petView.onMouseEnter = { [weak self] in
-                self?.beginHovering()
-            }
-            petView.onMouseExit = { [weak self] in
-                self?.endHovering()
-            }
-            petView.onContextMenuOpen = { [weak self] in
-                self?.beginContextMenuAttention()
-            }
 
             let frame = initialWindowFrame()
             let window = PetWindow(
@@ -1222,8 +1244,96 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { _, _ in }
     }
 
+    @objc func selectPet(_ sender: NSMenuItem) {
+        guard let petID = sender.representedObject as? String,
+              let pet = petCatalog.pet(withID: petID),
+              pet.id != selectedPet.id else {
+            return
+        }
+
+        selectedPet = pet
+        UserDefaults.standard.set(pet.id, forKey: Self.selectedPetDefaultsKey)
+        reloadSelectedPet()
+    }
+
     @objc func quit() {
         NSApp.terminate(nil)
+    }
+
+    private var config: CompanionConfig {
+        CompanionConfig.standard(pet: selectedPet)
+    }
+
+    private func makePetView(frameProvider: PetFrameProvider, config: CompanionConfig) -> PetView {
+        let petView = PetView(frameProvider: frameProvider, config: config, ambientPolicy: ambientPolicy)
+        petView.onDragStart = { [weak self] in
+            self?.beginDragging()
+        }
+        petView.onDragEnd = { [weak self] in
+            self?.endDragging()
+        }
+        petView.onMouseEnter = { [weak self] in
+            self?.beginHovering()
+        }
+        petView.onMouseExit = { [weak self] in
+            self?.endHovering()
+        }
+        petView.onContextMenuOpen = { [weak self] in
+            self?.beginContextMenuAttention()
+        }
+        petView.contextMenuProvider = { [weak self] in
+            self?.makeContextMenu() ?? NSMenu()
+        }
+        return petView
+    }
+
+    private func makeContextMenu() -> NSMenu {
+        let menu = NSMenu()
+        let petItem = NSMenuItem(title: "选择宠物", action: nil, keyEquivalent: "")
+        let petMenu = NSMenu(title: "选择宠物")
+        for pet in petCatalog.pets {
+            let item = NSMenuItem(title: pet.displayName, action: #selector(selectPet(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = pet.id
+            item.state = pet.id == selectedPet.id ? .on : .off
+            petMenu.addItem(item)
+        }
+        petItem.submenu = petMenu
+        menu.addItem(petItem)
+        menu.addItem(NSMenuItem.separator())
+
+        let openItem = NSMenuItem(title: "打开 Codex", action: #selector(openCodex), keyEquivalent: "")
+        openItem.target = self
+        menu.addItem(openItem)
+        menu.addItem(NSMenuItem.separator())
+
+        let quitItem = NSMenuItem(title: "退出宠物", action: #selector(quit), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
+        return menu
+    }
+
+    private func reloadSelectedPet() {
+        let config = CompanionConfig.standard(pet: selectedPet)
+        do {
+            stopScheduledAndActiveActions()
+            applyBehaviorProfile(for: selectedPet)
+            let frameProvider = try PetFrameProvider(config: config)
+            let petView = makePetView(frameProvider: frameProvider, config: config)
+            self.petView = petView
+            window?.contentView = petView
+            activityReader = CodexActivityReader(config: config)
+            petView.settle(presentationState: currentPresentationState)
+            scheduleAllSchedulers(initialDelay: true)
+        } catch {
+            presentStartupError(error)
+        }
+    }
+
+    private func applyBehaviorProfile(for pet: PetAssetSpec) {
+        ambientPolicy = PetAmbientActionPolicy(profile: pet.behaviorProfile)
+        schedulerIntervalPolicy = PetActionSchedulerIntervalPolicy(profile: pet.behaviorProfile)
+        suiteCursors.removeAll()
     }
 
     private func pollPresentationState() {
@@ -1614,6 +1724,27 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         from previousState: PetPresentationState,
         to state: PetPresentationState
     ) -> [PetAnimation] {
+        if selectedPet.behaviorProfile == .manekiNeko {
+            switch (previousState, state) {
+            case (_, .offlineRest):
+                return []
+            case (.offlineRest, .idleRelaxed), (.offlineRest, .waitingAttentive):
+                return [.wakeUp]
+            case (_, .idleRelaxed):
+                return [.breathing]
+            case (.offlineRest, .reviewFocused), (.offlineRest, .toolRunning):
+                return [.wakeUp]
+            case (_, .reviewFocused), (_, .toolRunning), (_, .waitingAttentive):
+                return [.cursorLook]
+            case (_, .blockedConcerned):
+                return []
+            case (_, .completedCalm):
+                return [.nod]
+            case (_, .longWorkTired):
+                return [.lookAround]
+            }
+        }
+
         switch (previousState, state) {
         case (_, .offlineRest):
             return []

@@ -46,6 +46,8 @@ swiftc \
 
 copy_resource_dir "$ROOT/assets/lingxi-ol-hires" "$APP_DIR/Contents/Resources/lingxi-ol-hires"
 copy_resource_dir "$ROOT/assets/lingxi-ol" "$APP_DIR/Contents/Resources/lingxi-ol"
+copy_resource_dir "$ROOT/assets/maneki-neko-hires" "$APP_DIR/Contents/Resources/maneki-neko-hires"
+copy_resource_dir "$ROOT/assets/maneki-neko" "$APP_DIR/Contents/Resources/maneki-neko"
 if [ -d "$ROOT/assets/lingxi-ol-rig" ]; then
   copy_resource_dir "$ROOT/assets/lingxi-ol-rig" "$APP_DIR/Contents/Resources/lingxi-ol-rig"
 fi

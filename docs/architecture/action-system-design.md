@@ -107,9 +107,9 @@ stateDiagram-v2
 | 展示状态 | 停留姿态 | 进入动作 | 状态内动作 |
 |----------|----------|----------|------------|
 | `offlineRest` | `failed` | 无 | 无或极低频静止。 |
-| `idleRelaxed` | `waiting` | `shoulder-relax` | `breathing`、`weight-shift`、`shoulder-relax`、`hair-sway`。 |
-| `waitingAttentive` | `waiting` | `cursor-look` | `cursor-look`、`waving`。 |
-| `reviewFocused` | `review` | `adjust-glasses` | `adjust-glasses`、`thinking`、`nod`、`check-notes`。 |
+| `idleRelaxed` | `idle` | `shoulder-relax` | `breathing`、`weight-shift`、`shoulder-relax`、`hair-sway`、`waving`、`adjust-outfit`、`look-around`。 |
+| `waitingAttentive` | `waiting` | `cursor-look` | `cursor-look`、`waving`、`nod`、`tiny-hand-adjust`、`adjust-outfit`、`glance-left/right`、`look-around`、`fix-posture`、`step-aside`、`posture-reset`、`stretch`。 |
+| `reviewFocused` | `review` | `adjust-glasses` | `adjust-glasses`、`thinking`、`nod`、`tap-keyboard`、`check-notes`、`stretch-wrist`、`glance-left/right`、`focus-shift`、`fix-posture`、`posture-reset`、`stretch`。 |
 | `toolRunning` | `tap-keyboard` 中段帧 | `tap-keyboard` | `tap-keyboard`、`focus-shift`、`check-notes`。 |
 | `blockedConcerned` | `failed` 中后段帧 | 无 | `glance-left/right`、`shoulder-relax`。 |
 | `completedCalm` | `nod` 中后段帧 | `nod` | `nod`、`shoulder-relax`。 |
@@ -134,7 +134,8 @@ stateDiagram-v2
 
 | 动作 | 类型 | 频率 | 时长 | 说明 |
 |------|------|------|------|------|
-| `blink`、`slow-blink` | 旧表情兼容枚举 | 不默认调度 | `0.12-0.8s` | 运行素材已清理，后续优先烘焙进基础姿态或动作 clip。 |
+| `blink` | 旧表情兼容枚举 | 不默认调度 | `0.12-0.25s` | Lingxi 运行素材已清理，后续优先烘焙进基础姿态或动作 clip。 |
+| `slow-blink` | 兼容枚举 / 招财猫全帧眯眼 | 仅招财猫 profile 显式调度 | `0.7s` | 不恢复旧脸部覆盖层；招财猫用 `assets/maneki-neko-hires/slow-blink` 全帧素材。 |
 | `eye-shift-left/right` | 旧表情兼容枚举 | 不默认调度 | `0.4-0.9s` | 不再作为独立调度层；视线变化随 `cursor-look`、`glance` 等动作画入。 |
 | `small-smile`、`focus-tighten`、`relax-face` | 旧表情兼容枚举 | 不默认调度 | `0.6-1.2s` | 语义保留，运行素材已清理，视觉效果改为动作立绘自带表情。 |
 
@@ -245,8 +246,8 @@ stateDiagram-v2
 
 | 状态 | 表情 | 基础姿态 | 微动作 | 小动作 | 中动作 | 大动作 |
 |------|------|----------|--------|--------|--------|--------|
-| `working` | 动作自带 `focused`、`thinking` | `review` | `breathing`、`tiny-hand-adjust`、`hair-sway` | `adjust-glasses`、`nod`、`tap-keyboard`、`check-notes` | `focus-shift`、`glance-left/right`、`fix-posture` | `stretch` 极低频 |
-| `waiting` | 动作自带 `neutral`、`curious`、长等待 `tired` | `waiting`、`idle-relaxed` | `weight-shift`、`shoulder-relax`、`tiny-hand-adjust` | `waving` | `glance-left/right`、`adjust-outfit`、`look-around` | `stretch`、`step-aside` 极低频 |
+| `working` | 动作自带 `focused`、`thinking` | `review` | `breathing`、`tiny-hand-adjust`、`hair-sway` | `adjust-glasses`、`thinking`、`nod`、`tap-keyboard`、`check-notes`、`stretch-wrist` | `focus-shift`、`glance-left/right`、`fix-posture`、`posture-reset` | `stretch` 低频 |
+| `waiting` | 动作自带 `neutral`、`curious`、长等待 `tired` | `waiting`、`idle` | `weight-shift`、`shoulder-relax`、`tiny-hand-adjust` | `cursor-look`、`waving`、`nod`、`adjust-outfit` | `glance-left/right`、`fix-posture`、`look-around` | `stretch`、`step-aside`、`posture-reset` 低频 |
 | `offline` | `error`、`tired` | `failed` | 很少或无 | 无 | `wake-up` 只在恢复时 | 无 |
 | hover | 动作自带 `curious`、`happy` | 当前姿态 | 暂停普通随机微动作 | `waving` / `nod` | `cursor-look` / `focus-shift` | 不触发完整转身 |
 | drag | 保持当前表情 | 当前帧冻结 | 无 | 无 | `drag-release-settle` | 无 |
@@ -837,7 +838,7 @@ ActionClip
 
 - 增加 `PetExpression` 概念。（已落地）
 - `PetExpression` 作为动作资产语义标签保留，不表示 runtime 独立图层。（已落地）
-- `blink`、`slow-blink`、`focus-tighten`、`small-smile` 等旧表情 clip 仅保留兼容枚举，运行素材已清理，不进入默认独立调度。（已落地）
+- `blink`、`focus-tighten`、`small-smile` 等旧表情 clip 仅保留兼容枚举，Lingxi 运行素材已清理，不进入默认独立调度；`slow-blink` 只作为招财猫全帧动作由 `manekiNeko` profile 显式调度。（已落地）
 - working 使用 `focused`，waiting 使用 `neutral/curious/tired`，offline 使用 `error`。（已纳入 action catalog）
 
 ### Phase 3：丰富小动作和中动作
@@ -864,8 +865,8 @@ ActionClip
 
 - 默认 3 分钟 ambient 中不出现完整 360° 转身。
 - hover 只触发 `cursor-look` 等带好奇/正反馈表情的动作，不触发 `turntable`。
-- working 能看出专注状态：`review` 姿态、扶眼镜/点头/轻敲等小动作，动作立绘自带 `focused` 或 `thinking` 表情。
-- waiting 能看出等待状态：挥手、重心变化、舒展等动作，动作立绘自带 `neutral`、`curious` 或 `tired` 表情。
+- working 能看出专注状态：`review` 姿态、扶眼镜、思考、点头、轻敲、查笔记、伸腕等小动作，动作立绘自带 `focused` 或 `thinking` 表情。
+- waiting 能看出等待状态：挥手、看向用户、整理衣服、轻微环顾、横移、重置姿态、舒展等动作，动作立绘自带 `neutral`、`curious` 或 `tired` 表情。
 - offline 保持低干扰，不频繁动。
 - 动作结束后都自然回到当前状态基础姿态。
 - 独立表情动作不进入默认调度，微动作和主动作的调度关系有测试覆盖。

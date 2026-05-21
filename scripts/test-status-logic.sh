@@ -16,3 +16,6 @@ swiftc \
 
 "$BUILD_DIR/status-tests"
 "$ROOT/scripts/validate-rig-assets.py"
+"$ROOT/scripts/validate-maneki-neko-assets.py"
+"$ROOT/scripts/validate-codex-native-pet.py" "$ROOT/assets/lingxi-ol"
+"$ROOT/scripts/validate-codex-native-pet.py" "$ROOT/assets/maneki-neko"

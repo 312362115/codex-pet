@@ -1,0 +1,20 @@
+source=scripts/build-maneki-neko-assets.py
+display_size=576x624
+style=deterministic vector-like maneki neko
+content_scale=0.82
+content_baseline_y=600
+content_crop_box=(112, 48, 504, 568)
+breathing 12
+cursor-look 16
+drag-release-settle 12
+failed 10
+glance-left 16
+glance-right 16
+hair-sway 12
+idle 10
+look-around 32
+nod 16
+slow-blink 8
+waiting 10
+wake-up 20
+waving 24

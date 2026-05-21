@@ -19,6 +19,7 @@
 这条命令会自动完成：
 
 - 安装预编译的 `CodexPetCompanion.app` 到 `~/.codex/pet-companion/CodexPetCompanion.app`。
+- 安装 `Lingxi OL` 和 `招财猫` Codex 原生宠物包到 `~/.codex/pets/`。
 - 停止旧桌宠进程并启动新版本。
 
 自定义安装目录：
@@ -31,6 +32,12 @@ CODEX_PET_INSTALL_DIR="$HOME/.codex/pet-companion-dev" ./install-release.sh
 
 ```bash
 ./install-release.sh --no-restart
+```
+
+只安装桌宠 App，不安装 Codex 原生宠物包：
+
+```bash
+./install-release.sh --skip-native-pet
 ```
 
 ## 给 Codex 的一键指令
@@ -73,6 +80,7 @@ cd ~/workspace/codex-pet
 - 构建 `CodexPetCompanion.app`。
 - 使用本机 ad-hoc 签名。
 - 安装到 `~/.codex/pet-companion/CodexPetCompanion.app`。
+- 从仓库内 `assets/lingxi-ol/` 和 `assets/maneki-neko/` 复制原生宠物包到 `~/.codex/pets/`。
 - 停止旧桌宠进程并启动新版本。
 
 源码安装常用选项：
@@ -81,6 +89,7 @@ cd ~/workspace/codex-pet
 ./scripts/install.sh --skip-tests
 ./scripts/install.sh --no-restart
 ./scripts/install.sh --rebuild-assets
+./scripts/install.sh --skip-native-pet
 CODEX_PET_INSTALL_DIR="$HOME/.codex/pet-companion-dev" ./scripts/install.sh
 ```
 
@@ -96,6 +105,13 @@ ps -axo pid,command | rg 'CodexPetCompanion|codex-pet-companion'
 
 ```bash
 sed -n '1,40p' "$HOME/.codex/pet-companion/CodexPetCompanion.app/Contents/Resources/lingxi-ol-hires/manifest.txt"
+```
+
+确认 Codex 原生宠物包：
+
+```bash
+ls -lh "$HOME/.codex/pets/maneki-neko/pet.json" "$HOME/.codex/pets/maneki-neko/spritesheet.webp"
+ls -lh "$HOME/.codex/pets/lingxi-ol/pet.json" "$HOME/.codex/pets/lingxi-ol/spritesheet.webp"
 ```
 
 ## 手动启动和退出
@@ -119,4 +135,5 @@ pkill -f 'CodexPetCompanion.app/Contents/MacOS/CodexPetCompanion'
 - 如果 Release 安装后没有变化，通常是旧进程仍在运行；重新执行 `./install-release.sh` 会自动杀掉旧进程并启动新版本。
 - 如果 macOS 拦截启动，在“系统设置 → 隐私与安全性”中允许打开，或让维护者重新生成并上传签名后的 Release 包。
 - 如果修改过素材但桌面没有变化，使用源码安装路径执行 `./scripts/install.sh --rebuild-assets`。
+- 如果只想重新安装 Codex 原生宠物包，执行 `./scripts/install-codex-native-pet.sh --rebuild-assets`。
 - 如果只想看源码构建产物，不安装到 Codex 目录，执行 `./scripts/build-app.sh`，产物在 `build/CodexPetCompanion.app`。

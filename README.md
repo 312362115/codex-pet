@@ -8,7 +8,9 @@
 
 ## 桌宠形象
 
-当前桌宠名为 `Lingxi OL`，是一位年轻职场风格的桌面 companion。形象采用白衬衣、黑色包臀裙、眼镜和深色长袜的搭配，整体偏真人感而不是像素或强动画风格。她会在桌面上保持低干扰存在，根据 Codex 的本地活动状态显示工作中、等待输入或离线，并通过偶尔的小动作、转身和鼠标悬停反馈营造轻量陪伴感。
+当前默认桌宠名为 `Lingxi OL`，是一位年轻职场风格的桌面 companion。形象采用白衬衣、黑色包臀裙、眼镜和深色长袜的搭配，整体偏真人感而不是像素或强动画风格。她会在桌面上保持低干扰存在，根据 Codex 的本地活动状态显示工作中、等待输入或离线，并通过偶尔的小动作、转身和鼠标悬停反馈营造轻量陪伴感。
+
+右键菜单支持在不同宠物之间切换。当前内置 `Lingxi OL` 和 `招财猫`：招财猫是白色招财猫形象，带红色项圈、金铃铛、金币和抬起的招手爪。每个宠物有独立行为配置，切换到招财猫时会同步切换到精简动作集，只保留招手、眯眼、摆尾、左右看、环顾、点头和基础状态反馈。`Lingxi OL` 和 `招财猫` 都可以安装为 Codex 原生宠物包，使用标准 `spritesheet.webp` 和 `pet.json`。
 
 ## 功能
 
@@ -20,7 +22,7 @@
 - 运行帧包含离线生成的透明通道感知补间，短动作 16-24 帧，转身检查动作 25 帧，播放时长保持稳定。
 - 待机/等待态的呼吸、头部轻摆、重心变化、肩部放松、轻微看向用户、拖动落位和唤醒反馈使用轻量 SpriteKit rig；大动作继续播放高清 PNG clip。
 - 拖动时暂停动画，使用 AppKit 原生窗口拖动。
-- 右键菜单支持打开 Codex 和退出宠物。
+- 右键菜单支持选择宠物、打开 Codex 和退出宠物。
 
 ## 推荐安装
 
@@ -40,6 +42,8 @@
 ./scripts/install.sh
 ```
 
+源码安装会同时安装桌宠 App、`Lingxi OL` 原生宠物包和 `招财猫` 原生宠物包；原始素材仍保存在本仓库的 `assets/lingxi-ol/` 和 `assets/maneki-neko/`。
+
 完整说明见 [INSTALL.md](INSTALL.md)。
 
 ## 目录
@@ -51,15 +55,21 @@
 - `INSTALL.md`：安装、验证和排障说明。
 - `assets/lingxi-ol-hires/`：当前桌宠实际使用的高清帧。
 - `assets/lingxi-ol-rig/`：当前 SpriteKit rig PoC 资产，只包含安全的身体/头部拆层，用于呼吸、头部轻摆、重心变化、肩部放松、轻微看向用户、拖动落位和唤醒反馈。
-- `assets/lingxi-ol/`：旧版标准 spritesheet 备份，当前不作为主展示资源。
+- `assets/lingxi-ol/`：由当前高清帧派生的 Codex 原生宠物包，包含 `pet.json` 和 8x9 `spritesheet.webp`。
+- `assets/maneki-neko-hires/`：招财猫实际使用的高清透明 PNG 帧。
+- `assets/maneki-neko/`：招财猫标准 spritesheet 备份和 `pet.json`。
 - `assets/reference/generated/`：当前运行帧重建所需的高清源图。
-- `scripts/install.sh`：一键测试、构建、签名、安装并重启桌宠。
+- `scripts/install.sh`：一键测试、构建、签名、安装并重启桌宠，同时安装 Codex 原生宠物包。
+- `scripts/install-codex-native-pet.sh`：把 `Lingxi OL` 和 `招财猫` 安装为 Codex 原生宠物包到 `~/.codex/pets/`。
 - `scripts/package-release.sh`：生成可上传到 GitHub Release 的预编译安装包。
 - `scripts/build-app.sh`：构建 `.app`。
 - `scripts/test-status-logic.sh`：运行策略测试。
 - `scripts/validate-rig-assets.py`：校验 rig manifest、部件图、透明像素和高风险脸部/头发覆盖层禁入规则。
+- `scripts/validate-maneki-neko-assets.py`：校验招财猫招手、摆尾和左右看动作幅度。
+- `scripts/validate-codex-native-pet.py`：校验 Codex 原生宠物包的 `pet.json`、8x9 spritesheet 尺寸、透明像素和每格可见内容。
 - `scripts/build-hires-assets.py`：旧版临时行图重建脚本，不作为当前运行素材主入口。
 - `scripts/build-shirt-skirt-assets.py`：从衬衣包臀裙参考图重建当前运行帧。
+- `scripts/build-maneki-neko-assets.py`：可复现生成招财猫高清帧和标准 spritesheet。
 
 ## 构建
 
@@ -76,6 +86,16 @@ open build/CodexPetCompanion.app
 ./scripts/install.sh
 ```
 
+这会安装 `CodexPetCompanion.app` 到 `~/.codex/pet-companion/`，并把仓库里的 `assets/lingxi-ol/` 和 `assets/maneki-neko/` 复制到 `~/.codex/pets/`。
+
+## 安装 Codex 原生宠物
+
+```bash
+./scripts/install-codex-native-pet.sh --rebuild-assets
+```
+
+安装后包路径为 `~/.codex/pets/lingxi-ol/` 和 `~/.codex/pets/maneki-neko/`，都包含 `pet.json` 和标准 `1536x1872` 的 8x9 `spritesheet.webp`。
+
 ## 生成 Release 包
 
 ```bash
@@ -88,7 +108,9 @@ open build/CodexPetCompanion.app
 
 当前运行版主用 `assets/lingxi-ol-hires/`，README 顶部展示的主图来自 `assets/reference/generated/base-shirt-skirt-hires.png`。基础待机由这张高清主图生成，短动作来自 `assets/reference/generated/action-strip-shirt-skirt-consistent.png`，转身检查动作来自 `assets/reference/generated/turntable-strip-shirt-skirt-consistent.png`；`failed`、`review`、`waiting`、`nod` 和 `wake-up` 等语义状态会额外使用 `assets/reference/generated/expression-keyframes-v1.png` 中的整帧表情关键帧。裁切时禁止放大，也不再对整个人物做缩放动画；运行帧限制最大人物高度并在 App 内按比例绘制，避免从小图切大图导致模糊和身体比例变形。短动作和转身动作会在生成阶段插入 premultiplied-alpha 补间帧，运行时只播放 PNG 序列，不引入模型依赖。
 
-旧脸部覆盖素材已经从运行目录清理：`blink`、`slow-blink`、`eye-shift-*`、`focus-tighten`、`small-smile`、`hover-smile`、`context-menu-attend` 等目录不再打包。运行默认动作通过动作自身帧或 rig 姿态携带表情意图，不再叠加独立脸部、五官或眼睑覆盖层。`scripts/validate-rig-assets.py` 会阻止 `eyes`、`face`、`lid`、`hair`、`glasses` 等高风险覆盖层进入当前 rig 包。重复的静止帧用于动作停顿和节奏控制，不按单帧去重。
+旧脸部覆盖素材已经从 Lingxi 运行目录清理：`blink`、`eye-shift-*`、`focus-tighten`、`small-smile`、`hover-smile`、`context-menu-attend` 等目录不再打包。运行默认动作通过动作自身帧或 rig 姿态携带表情意图，不再叠加独立脸部、五官或眼睑覆盖层。`scripts/validate-rig-assets.py` 会阻止 `eyes`、`face`、`lid`、`hair`、`glasses` 等高风险覆盖层进入当前 rig 包。重复的静止帧用于动作停顿和节奏控制，不按单帧去重。
+
+招财猫运行版主用 `assets/maneki-neko-hires/`，标准 `assets/maneki-neko/spritesheet.webp` 作为兼容备份。素材由 `scripts/build-maneki-neko-assets.py` 机械生成，只保留 `idle`、`waiting`、`failed`、`waving`、`slow-blink`、`cursor-look`、`glance-left/right`、`look-around`、`hair-sway`、`breathing`、`nod`、`drag-release-settle` 和 `wake-up`。`slow-blink` 是招财猫自己的全帧眯眼动作，不恢复旧的脸部覆盖层。调度层通过 `PetBehaviorProfile.manekiNeko` 避免调用人形桌宠的敲键盘、扶眼镜、拉伸、横移等动作。
 
 ## 注意
 

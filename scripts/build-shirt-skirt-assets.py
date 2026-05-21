@@ -1,6 +1,7 @@
 #!/opt/homebrew/bin/python3
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 from PIL import Image, ImageFilter
@@ -9,7 +10,9 @@ from PIL import Image, ImageFilter
 ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_ROOT = ROOT / "assets" / "reference" / "generated"
 OUTPUT_ROOT = ROOT / "assets" / "lingxi-ol-hires"
+PET_ROOT = ROOT / "assets" / "lingxi-ol"
 DISPLAY_SIZE = (576, 624)
+CELL_SIZE = (192, 208)
 MAX_BODY_HEIGHT = 540
 MAX_UPSCALE = 1.0
 ACTION_FRAME_COUNT = 24
@@ -65,6 +68,17 @@ RUNTIME_STATES = {
     "waving",
     "weight-shift",
 }
+NATIVE_ROW_SOURCES = [
+    ("idle", "breathing"),
+    ("running-right", "glance-right"),
+    ("running-left", "glance-left"),
+    ("waving", "waving"),
+    ("jumping", "wake-up"),
+    ("failed", "failed"),
+    ("waiting", "waiting"),
+    ("running", "thinking"),
+    ("review", "review"),
+]
 
 def is_chroma_green(pixel: tuple[int, int, int, int]) -> bool:
     red, green, blue, alpha = pixel
@@ -118,6 +132,18 @@ def clean_edge_residue(image: Image.Image) -> Image.Image:
         elif greenish:
             neutral_green = max(red, blue)
             pixels.append((red, neutral_green, blue, alpha))
+        else:
+            pixels.append((red, green, blue, alpha))
+    rgba.putdata(pixels)
+    return rgba
+
+
+def normalize_hidden_rgb(image: Image.Image) -> Image.Image:
+    rgba = image.convert("RGBA")
+    pixels = []
+    for red, green, blue, alpha in image_data(rgba):
+        if alpha == 0:
+            pixels.append((0, 0, 0, 0))
         else:
             pixels.append((red, green, blue, alpha))
     rgba.putdata(pixels)
@@ -360,6 +386,55 @@ def write_state(state: str, frames: list[Image.Image]) -> None:
         frame.save(state_dir / f"{index:02d}.png")
 
 
+def fit_native_cell(frame: Image.Image) -> Image.Image:
+    rgba = clean_edge_residue(frame.convert("RGBA"))
+    bbox = rgba.getbbox()
+    cropped = rgba.crop(bbox) if bbox else rgba
+    scale = min(CELL_SIZE[0] / cropped.width, CELL_SIZE[1] / cropped.height)
+    resized = cropped.resize(
+        (max(1, round(cropped.width * scale)), max(1, round(cropped.height * scale))),
+        Image.Resampling.LANCZOS,
+    )
+    cell = Image.new("RGBA", CELL_SIZE, (0, 0, 0, 0))
+    cell.alpha_composite(resized, ((CELL_SIZE[0] - resized.width) // 2, CELL_SIZE[1] - resized.height))
+    return normalize_hidden_rgb(cell)
+
+
+def select_native_frames(state: str) -> list[Image.Image]:
+    paths = sorted((OUTPUT_ROOT / state).glob("*.png"))
+    if not paths:
+        raise FileNotFoundError(f"Missing runtime state for native spritesheet: {state}")
+
+    selected = []
+    for index in range(8):
+        source_index = round(index * (len(paths) - 1) / 7)
+        selected.append(fit_native_cell(Image.open(paths[source_index]).convert("RGBA")))
+    return selected
+
+
+def write_native_pet_package() -> None:
+    PET_ROOT.mkdir(parents=True, exist_ok=True)
+    sheet = Image.new("RGBA", (CELL_SIZE[0] * 8, CELL_SIZE[1] * len(NATIVE_ROW_SOURCES)), (0, 0, 0, 0))
+    for row_index, (_codex_state, source_state) in enumerate(NATIVE_ROW_SOURCES):
+        for column_index, frame in enumerate(select_native_frames(source_state)):
+            sheet.alpha_composite(frame, (column_index * CELL_SIZE[0], row_index * CELL_SIZE[1]))
+
+    normalize_hidden_rgb(sheet).save(PET_ROOT / "spritesheet.webp", lossless=True, quality=100, method=6, exact=True)
+    (PET_ROOT / "pet.json").write_text(
+        json.dumps(
+            {
+                "displayName": "Lingxi OL",
+                "description": "A polished office-style Codex companion with glasses, a white shirt, black skirt, and calm work-focused gestures.",
+                "spritesheetPath": "spritesheet.webp",
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def main() -> None:
     primary_frame = load_single_frame(PRIMARY_SOURCE)
     action_frames = split_grid(ACTION_STRIP_SOURCE, columns=4, rows=1)
@@ -471,7 +546,9 @@ def main() -> None:
         ) + "\n",
         encoding="utf-8",
     )
+    write_native_pet_package()
     print(f"Wrote shirt-skirt runtime frames to {OUTPUT_ROOT}")
+    print(f"Wrote Lingxi OL native pet package to {PET_ROOT}")
 
 
 if __name__ == "__main__":

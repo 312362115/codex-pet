@@ -9,7 +9,7 @@
 ## 验收标准
 
 - `breathing`、`hairSway`、`weightShift`、`shoulderRelax`、`cursorLook`、`dragReleaseSettle`、`wakeUp` 可映射为 `spriteKitRigMotion`；`cursorLook` 和 `hairSway` 只做 head/body 轻微代理动作，不叠加脸部或头发覆盖层。
-- `blink`、`slowBlink`、`eyeShiftLeft/right` 等旧脸部覆盖动作只保留兼容枚举，运行素材目录已清理，默认不调度。
+- `blink`、`eyeShiftLeft/right` 等旧脸部覆盖动作只保留兼容枚举，Lingxi 运行素材目录已清理，默认不调度；`slowBlink` 当前只作为招财猫全帧眯眼动作由 `manekiNeko` profile 显式调度。
 - `waving`、`turning`、`tapKeyboard`、`stretch` 等大动作继续走 PNG `frameClip`。
 - `assets/lingxi-ol-rig/` 被打进 `CodexPetCompanion.app/Contents/Resources/`。
 - `scripts/validate-rig-assets.py` 校验 rig manifest、body/head 部件图、透明像素和高风险脸部/头发覆盖层禁入规则，并被 `test-status-logic.sh` / `build-app.sh` 调用。
@@ -48,6 +48,11 @@
 - 已完成第一版表情一体关键帧接入：新增 `assets/reference/generated/expression-keyframes-v1.png`，用于 `failed`、`review`、`waiting`、`nod` 和 `wake-up` 等语义状态；动态挥手/伸展等跨源补间会产生重影，第一版暂不接入这些动作。
 - 已修正动作调度过保守的问题：首轮小动作从 24-40 秒缩短为 8-14 秒，首轮大动作从 140-220 秒缩短为 24-38 秒；等待/待机小动作池扩展为多动作轮转，避免实际运行只在少数动作里循环。
 - 已修正 runtime 定时冲突：启动后只有空闲时才补挂 ambient timer，interaction 播放前会清理 ambient timer；hover 会打断 ambient 微/小/大动作，但不会二次抢占正在执行的 interaction。
+
+### 2026-05-21
+
+- 已继续修正动作体感重复：`idleRelaxed` 改用独立 `idle` 停留姿态；`reviewFocused` 小动作池补齐 `tap-keyboard` 和 `stretch-wrist`；`waitingAttentive` 大动作池补齐 `fix-posture`、`step-aside`、`posture-reset` 和 `stretch`，让更多已有素材目录进入默认调度。
+- 已修正 2026-05-21 首版调度过密的问题：保留扩展后的动作池，但将首轮微动作/小动作/大动作分别调整为 10-16 秒、24-36 秒、75-110 秒；等待/待机循环调整为微动作 28-46 秒、小动作 55-90 秒、大动作 150-240 秒，避免桌宠持续抽动。
 - 下一步：如需进一步提升动态动作表情，需要重新生成同一动作内部连续关键帧，而不是把不同源图交叉补间。
 
 ## 表情一体化重生成候选

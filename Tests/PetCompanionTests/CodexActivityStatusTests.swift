@@ -59,6 +59,17 @@ struct CodexActivityStatusTests {
         #expect(mapper.animation(for: .waiting) == .waiting)
     }
 
+    @Test("Pet catalog selects behavior profiles")
+    func petCatalogSelectsBehaviorProfiles() {
+        let catalog = PetCatalog()
+
+        #expect(catalog.defaultPet.id == "lingxi-ol")
+        #expect(catalog.defaultPet.behaviorProfile == .officeCompanion)
+        #expect(catalog.pet(withID: "maneki-neko")?.displayName == "招财猫")
+        #expect(catalog.pet(withID: "maneki-neko")?.behaviorProfile == .manekiNeko)
+        #expect(catalog.selectedPet(for: "missing").id == "lingxi-ol")
+    }
+
     @Test("Metadata maps to work phases and presentation states")
     func metadataMapsToWorkPhasesAndPresentationStates() {
         #expect(phaseClassifier.classify(CodexMetadataSnapshot(
@@ -222,6 +233,7 @@ struct CodexActivityStatusTests {
 
         #expect(!ambientPolicy.largeActionSuites(for: .working).flatMap { $0 }.contains(.turning))
         #expect(!ambientPolicy.largeActionSuites(for: .waiting).flatMap { $0 }.contains(.turning))
+        #expect(ambientPolicy.restingAnimation(for: .idleRelaxed) == .idle)
         #expect(ambientPolicy.restingAnimation(for: .toolRunning) == .tapKeyboard)
         #expect(ambientPolicy.restingAnimation(for: .completedCalm) == .nod)
         #expect(ambientPolicy.restingFrameIndex(for: .toolRunning, frameCount: 24) > 0)
@@ -229,11 +241,16 @@ struct CodexActivityStatusTests {
         #expect(ambientPolicy.microActionSuites(for: .working) == [[.breathing], [.tinyHandAdjust], [.hairSway]])
         #expect(ambientPolicy.microActionSuites(for: .waiting) == [[.breathing], [.weightShift], [.shoulderRelax], [.tinyHandAdjust], [.hairSway]])
         #expect(ambientPolicy.microActionSuites(for: .idleRelaxed).contains([.weightShift]))
-        #expect(ambientPolicy.largeActionSuites(for: .working) == [[.glanceLeft], [.glanceRight], [.focusShift], [.fixPosture], [.postureReset]])
-        #expect(ambientPolicy.largeActionSuites(for: .waiting) == [[.glanceLeft], [.glanceRight], [.adjustOutfit], [.lookAround]])
+        #expect(ambientPolicy.largeActionSuites(for: .working) == [[.glanceLeft], [.glanceRight], [.focusShift], [.fixPosture], [.postureReset], [.stretch]])
+        #expect(ambientPolicy.largeActionSuites(for: .waiting) == [[.glanceLeft], [.glanceRight], [.adjustOutfit], [.lookAround], [.fixPosture], [.stepAside], [.postureReset], [.stretch]])
+        let waitingVisibleActions = Set(
+            ambientPolicy.smallActionSuites(for: .waitingAttentive).flatMap { $0 }
+                + ambientPolicy.largeActionSuites(for: .waitingAttentive).flatMap { $0 }
+        )
+        #expect([.cursorLook, .waving, .nod, .tinyHandAdjust, .adjustOutfit, .glanceLeft, .glanceRight, .lookAround, .fixPosture, .stepAside, .postureReset, .stretch].allSatisfy(waitingVisibleActions.contains))
         #expect(ambientPolicy.smallActionSuites(for: .toolRunning) == [[.tapKeyboard], [.checkNotes], [.focusShift]])
         #expect(ambientPolicy.smallActionSuites(for: .waiting) == [[.cursorLook], [.waving], [.nod], [.tinyHandAdjust], [.adjustOutfit]])
-        #expect(ambientPolicy.smallActionSuites(for: .idleRelaxed) == [[.waving], [.nod], [.cursorLook], [.tinyHandAdjust]])
+        #expect(ambientPolicy.smallActionSuites(for: .idleRelaxed) == [[.waving], [.nod], [.cursorLook], [.tinyHandAdjust], [.adjustOutfit]])
         #expect(ambientPolicy.hoverActionSuites(for: .working) == [[.adjustGlasses], [.thinking]])
         #expect(ambientPolicy.hoverActionSuites(for: .waiting) == [[.cursorLook], [.waving]])
         #expect(ambientPolicy.hoverActionSuites(for: .toolRunning) == [[.tapKeyboard], [.focusShift], [.checkNotes]])
@@ -244,10 +261,30 @@ struct CodexActivityStatusTests {
     func schedulerIntervalsSurfaceMoreGeneratedActions() {
         let schedulerIntervalPolicy = PetActionSchedulerIntervalPolicy()
 
-        #expect(schedulerIntervalPolicy.microActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(5, 9))
-        #expect(schedulerIntervalPolicy.smallActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(8, 14))
-        #expect(schedulerIntervalPolicy.largeActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(24, 38))
-        #expect(schedulerIntervalPolicy.largeActionIntervalRange(for: .idleRelaxed, initialDelay: false) == PetSchedulerIntervalRange(60, 110))
+        #expect(schedulerIntervalPolicy.microActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(10, 16))
+        #expect(schedulerIntervalPolicy.smallActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(24, 36))
+        #expect(schedulerIntervalPolicy.largeActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(75, 110))
+        #expect(schedulerIntervalPolicy.microActionIntervalRange(for: .waitingAttentive, initialDelay: false) == PetSchedulerIntervalRange(28, 46))
+        #expect(schedulerIntervalPolicy.smallActionIntervalRange(for: .waitingAttentive, initialDelay: false) == PetSchedulerIntervalRange(55, 90))
+        #expect(schedulerIntervalPolicy.largeActionIntervalRange(for: .idleRelaxed, initialDelay: false) == PetSchedulerIntervalRange(150, 240))
+        #expect(schedulerIntervalPolicy.largeActionIntervalRange(for: .reviewFocused, initialDelay: false) == PetSchedulerIntervalRange(180, 300))
+    }
+
+    @Test("Maneki Neko profile uses lucky cat scheduling")
+    func manekiNekoProfileUsesLuckyCatScheduling() {
+        let ambientPolicy = PetAmbientActionPolicy(profile: .manekiNeko)
+        let schedulerIntervalPolicy = PetActionSchedulerIntervalPolicy(profile: .manekiNeko)
+
+        #expect(ambientPolicy.restingAnimation(for: .toolRunning) == .waiting)
+        #expect(ambientPolicy.microActionSuites(for: .waitingAttentive) == [[.hairSway], [.breathing], [.slowBlink]])
+        #expect(ambientPolicy.smallActionSuites(for: .waitingAttentive) == [[.waving], [.waving], [.cursorLook], [.nod]])
+        #expect(ambientPolicy.largeActionSuites(for: .waitingAttentive) == [[.lookAround], [.glanceLeft], [.glanceRight]])
+        #expect(ambientPolicy.hoverActionSuites(for: .waitingAttentive) == [[.waving], [.cursorLook], [.hairSway], [.slowBlink]])
+
+        #expect(schedulerIntervalPolicy.microActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(2, 4))
+        #expect(schedulerIntervalPolicy.smallActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(3, 6))
+        #expect(schedulerIntervalPolicy.largeActionIntervalRange(for: .waitingAttentive, initialDelay: true) == PetSchedulerIntervalRange(8, 14))
+        #expect(schedulerIntervalPolicy.smallActionIntervalRange(for: .waitingAttentive, initialDelay: false) == PetSchedulerIntervalRange(12, 22))
     }
 
     @Test("Action catalog classifies action layers")

@@ -128,7 +128,7 @@ rig 作为 `PetView` 内部的透明 SpriteKit 子视图，而不是拆成独立
 | `weightShift` | `spriteKitRigMotion` | 使用 body/head 整体轻移和轻旋转，不触碰脸部覆盖素材。 |
 | `shoulderRelax` | `spriteKitRigMotion` | 使用 body/head 局部下沉和回弹，避免真人手臂拆层穿帮。 |
 | `hairSway` | `spriteKitRigMotion` | 当前用 head/body 代理头部轻摆，不启用独立头发覆盖层；干净头发拆层完成后再替换为真实 hair part。 |
-| `blink` / `slowBlink` | `frameClip` 兼容枚举 | 不再拆独立眼睑/五官，也不默认调度；后续如需恢复，必须重新生成表情和动作一体的全帧动作素材。 |
+| `blink` / `slowBlink` | `frameClip` 兼容枚举 | 不再拆独立眼睑/五官，也不默认 catalog 调度；`slowBlink` 已按这个要求恢复为招财猫全帧动作素材。 |
 | `eyeShiftLeft` / `eyeShiftRight` | `frameClip` 兼容枚举 | 眼睛/眼镜没有干净拆层前不保留运行素材，默认不调度。 |
 | `cursorLook` | `spriteKitRigMotion` | 只使用 head/body 轻微转向，不叠加脸部覆盖素材；rig 不可用时回退 PNG。 |
 | `tinyHandAdjust` | `frameClip` | 手臂/手部没有干净拆层前继续使用 PNG。 |
@@ -159,7 +159,7 @@ rig 作为 `PetView` 内部的透明 SpriteKit 子视图，而不是拆成独立
 
 1. 默认动作不叠加整脸覆盖层，也不拆独立五官/眼睑/嘴型；表情必须通过动作自身的 baked expression intent 或后续重新生成的全帧动作表达。
 2. `PetActionDescriptor.expressions` 保存每个动作的表情意图，测试要求默认可调度动作都必须有非空表情意图。
-3. `blink` / `slowBlink`、`eyeShiftLeft/right`、`hoverSmile`、`smallSmile` 等旧脸部覆盖动作只保留兼容枚举和时长策略，保持 `defaultEligible=false`，直到有动作一体的高质量全帧素材。
+3. `blink`、`eyeShiftLeft/right`、`hoverSmile`、`smallSmile` 等旧脸部覆盖动作只保留兼容枚举和时长策略，保持 `defaultEligible=false`，直到有动作一体的高质量全帧素材；`slowBlink` 当前只由招财猫 profile 显式调度全帧素材。
 
 定时策略：
 

@@ -10,6 +10,7 @@ INSTALLED_APP="$INSTALL_DIR/CodexPetCompanion.app"
 run_tests=1
 restart_app=1
 rebuild_assets=0
+install_native_pet=1
 
 usage() {
   cat <<'USAGE'
@@ -18,13 +19,15 @@ Usage: ./scripts/install.sh [options]
 Build, sign, install, and restart CodexPetCompanion.app.
 
 Options:
-  --skip-tests      Do not run status logic tests before building.
-  --no-restart      Install the app but do not stop/start the running pet.
-  --rebuild-assets  Rebuild runtime PNG frames before building the app.
-  -h, --help        Show this help.
+  --skip-tests       Do not run status logic tests before building.
+  --no-restart       Install the app but do not stop/start the running pet.
+  --rebuild-assets   Rebuild runtime PNG frames before building the app.
+  --skip-native-pet  Do not install Codex native pet packages.
+  -h, --help         Show this help.
 
 Environment:
   CODEX_PET_INSTALL_DIR  Override install directory. Default: ~/.codex/pet-companion
+  CODEX_HOME             Override Codex home directory for native pets. Default: ~/.codex
 USAGE
 }
 
@@ -38,6 +41,9 @@ while [ "$#" -gt 0 ]; do
       ;;
     --rebuild-assets)
       rebuild_assets=1
+      ;;
+    --skip-native-pet)
+      install_native_pet=0
       ;;
     -h|--help)
       usage
@@ -57,6 +63,7 @@ echo "==> Codex Pet install root: $ROOT"
 if [ "$rebuild_assets" -eq 1 ]; then
   echo "==> Rebuilding runtime assets"
   "$ROOT/scripts/build-shirt-skirt-assets.py"
+  "$ROOT/scripts/build-maneki-neko-assets.py"
   "$ROOT/scripts/build-rig-assets.py"
 fi
 
@@ -76,6 +83,11 @@ echo "==> Installing to $INSTALLED_APP"
 mkdir -p "$INSTALL_DIR"
 rm -rf "$INSTALLED_APP"
 ditto "$BUILD_APP" "$INSTALLED_APP"
+
+if [ "$install_native_pet" -eq 1 ]; then
+  echo "==> Installing Codex native pet packages"
+  "$ROOT/scripts/install-codex-native-pet.sh" --skip-tests
+fi
 
 if [ "$restart_app" -eq 1 ]; then
   echo "==> Restarting CodexPetCompanion"

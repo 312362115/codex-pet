@@ -5,12 +5,15 @@
 | 模块 | 文件 | 职责 |
 |------|------|------|
 | AppKit 入口 | `Sources/CodexPetCompanion/main.swift` | 创建透明悬浮窗、绘制宠物、处理拖动、右键菜单、定时动作、状态轮询和 Codex 元数据只读查询。 |
-| 状态与策略 | `Sources/PetCompanion/CodexActivityStatus.swift` | 定义 Codex 粗状态、工作阶段、宠物展示状态、动画枚举、状态分类、帧数、动作时长和动作套组策略。 |
+| 状态、策略与宠物目录 | `Sources/PetCompanion/CodexActivityStatus.swift` | 定义 Codex 粗状态、工作阶段、宠物展示状态、动画枚举、状态分类、帧数、动作时长、动作套组策略和可选择宠物 catalog。 |
 | 策略测试 | `Tests/PetCompanionStatusTestRunner.swift` | 验证状态分类、展示状态映射、动画映射、帧数和动作套组。 |
 | 运行帧生成 | `scripts/build-shirt-skirt-assets.py` | 从参考图生成 `assets/lingxi-ol-hires/` 运行时 PNG 帧。 |
+| 招财猫帧生成 | `scripts/build-maneki-neko-assets.py` | 可复现生成 `assets/maneki-neko-hires/` 运行时 PNG 帧和 `assets/maneki-neko/spritesheet.webp`。 |
 | Rig 资产生成 | `scripts/build-rig-assets.py` | 从当前待机帧机械生成 `assets/lingxi-ol-rig/` PoC 拆层资产。 |
 | Rig 资产验证 | `scripts/validate-rig-assets.py` | 校验 rig manifest、body/head 部件图、透明像素和高风险覆盖层禁入规则。 |
-| 源码安装 | `scripts/install.sh` | 测试、构建、签名、安装并重启本机桌宠。 |
+| Codex 原生宠物验证 | `scripts/validate-codex-native-pet.py` | 校验 `pet.json`、8x9 `spritesheet.webp`、透明像素和每格可见内容。 |
+| 源码安装 | `scripts/install.sh` | 测试、构建、签名、安装并重启本机桌宠，同时安装 Codex 原生宠物包。 |
+| 原生宠物安装 | `scripts/install-codex-native-pet.sh` | 将 `assets/lingxi-ol/` 和 `assets/maneki-neko/` 安装到 `~/.codex/pets/`。 |
 | Release 打包 | `scripts/package-release.sh` | 生成 GitHub Release 预编译 zip 和 checksum。 |
 
 ## 运行时流程
@@ -32,6 +35,30 @@ CodexActivityReader
 默认窗口位置由 `PetWindowPlacementPolicy` 计算，启动时落在当前主屏可见区域左下角，并保留 24px 边距；多屏或菜单栏/Dock 改变可见区域时使用 `visibleFrame.minX/minY`，不再默认放到右下角。
 
 PNG 动作播放使用固定总时长和动态帧间隔。运行时按实际帧数自动计算单帧间隔，避免补帧后动作整体变慢。SpriteKit rig 动作使用同一套 `PetAnimationTimingPolicy` 总时长，但不启动 PNG frame timer，而是通过一次性 timer 推进动作 suite。当前测试已锁定 rig、交互、短动作、大动作和旧表情兼容动作的总时长，避免后续补帧或切换渲染方式时把动作整体拖慢。
+
+## 宠物选择
+
+`PetCatalog` 是当前可选宠物的单一来源。默认顺序为 `Lingxi OL`、`招财猫`，未知或过期的持久化选择会回落到默认宠物，避免删改资产后启动失败。App 启动时从 `UserDefaults` 读取上次选择，右键菜单的“选择宠物”子菜单会显示所有 catalog 条目，并用勾选态标记当前宠物。每个 catalog 条目同时声明 `PetBehaviorProfile`，避免只换图片不换动作调度。
+
+切换宠物时，App 会停止当前动作和 ambient timer，按新宠物重新解析 `CompanionConfig`、`PetFrameProvider`、`PetView`、`PetAmbientActionPolicy` 和 `PetActionSchedulerIntervalPolicy`，然后回到当前 `PetPresentationState` 的停留姿态。Codex 状态读取器只依赖 `.codex` 元数据，切换宠物不会读取会话内容，也不会改变状态分类。
+
+当前行为配置：
+
+| Profile | 宠物 | 调度特点 |
+|---------|------|----------|
+| `officeCompanion` | `Lingxi OL` | 保持低干扰，动作间隔较长，工作态偏思考/敲键盘/整理姿态。 |
+| `manekiNeko` | `招财猫` | 切换后更快开始动作，只保留招手、眯眼、摆尾、左右看、环顾、点头和基础反馈，避免套用人形工作动作。 |
+
+资源解析顺序保持简单：
+
+- 优先使用 `.app/Contents/Resources/<pet-hires-dir>/` 下的高清帧。
+- 高清帧缺失时回落到 `~/.codex/pet-companion/assets/<pet-hires-dir>/`。
+- 标准 spritesheet 先读 bundle 内 `Resources/<pet-dir>/spritesheet.webp`，再回落到 `~/.codex/pets/<pet-dir>/spritesheet.webp`。
+- 只有配置了 rig 目录的宠物才启用 SpriteKit rig；当前 `招财猫` 不带 rig，所有动作走 PNG 帧。
+
+`Lingxi OL` 和招财猫同时维护 Codex 原生宠物包：`assets/lingxi-ol/` 与 `assets/maneki-neko/` 都只包含 `pet.json` 和标准 `1536x1872` 的 8x9 `spritesheet.webp`，源码安装时会默认复制到 `~/.codex/pets/`，也可单独通过 `scripts/install-codex-native-pet.sh` 安装。Release 安装脚本从包内 `CodexPetCompanion.app/Contents/Resources/<pet-id>/` 复制同一份原生宠物包。Codex 原生路径不包含高清动作目录，也不携带本桌宠专用的行为 profile；它只负责满足 Codex 原生宠物加载格式。
+
+`assets/lingxi-ol/spritesheet.webp` 由 `scripts/build-shirt-skirt-assets.py` 从当前 `assets/lingxi-ol-hires/` 派生，按 Codex 原生 9 行状态映射到：`idle <- breathing`、`running-right <- glance-right`、`running-left <- glance-left`、`waving <- waving`、`jumping <- wake-up`、`failed <- failed`、`waiting <- waiting`、`running <- thinking`、`review <- review`。这样 OL 的原生宠物包会跟随当前高清帧变化，而不是停留在旧 spritesheet。
 
 ## 状态读取
 
@@ -60,13 +87,15 @@ Codex 元数据先被分类为 `CodexWorkPhase`，再映射为可长期停留的
 | CodexWorkPhase | PetPresentationState | 展示文案 | 停留姿态 |
 |----------------|----------------------|----------|----------|
 | `offline` | `offlineRest` | `Codex 离线` | `failed` |
-| `idle` | `idleRelaxed` | `Codex 待命` | `waiting` |
+| `idle` | `idleRelaxed` | `Codex 待命` | `idle` |
 | `thinking` | `reviewFocused` | `正在思考` | `review` |
 | `runningTool` | `toolRunning` | `运行工具中` | `tap-keyboard` |
 | `waitingUser` | `waitingAttentive` | `等待你确认` | `waiting` |
 | `blocked` | `blockedConcerned` | `遇到错误` | `failed` |
 | `completed` | `completedCalm` | `这轮完成` | `nod` |
 | `longWorking` | `longWorkTired` | `连续工作中` | `stretch-wrist` |
+
+`PetBehaviorProfile.manekiNeko` 会覆盖部分停留姿态：工作、思考、等待和长时间工作都回到 `waiting`，完成回到 `nod`，离线/错误回到 `failed`。招财猫 ambient 和状态切换反馈只使用 `wake-up`、`cursor-look`、`slow-blink`、`breathing`、`nod`、`look-around` 等清单内动作。
 
 ## 动作策略
 
@@ -77,8 +106,8 @@ Codex 元数据先被分类为 `CodexWorkPhase`，再映射为可长期停留的
 | 展示状态 | `offlineRest`、`idleRelaxed`、`reviewFocused`、`toolRunning`、`waitingAttentive`、`blockedConcerned`、`completedCalm`、`longWorkTired` 都可作为最终展示状态；终态会停在动作 clip 的可读帧，不统一停在第 0 帧。 |
 | 表情 | 运行默认动作通过 `PetActionDescriptor.expressions` 携带 baked expression intent；独立脸部覆盖动作不进入默认调度，避免旧红线/贴片素材叠到脸上。 |
 | 微动作 | 根据展示状态选择 `breathing`、`weight-shift`、`shoulder-relax`、`hair-sway`、`tiny-hand-adjust`，由独立 timer 低干扰插入；等待态优先可触发 body/head rig 微动作，`hair-sway` 当前是 head/body 代理轻摆。 |
-| 小动作 | `reviewFocused` 偏审阅动作，`toolRunning` 偏工具运行动作，`waitingAttentive` 偏回应用户动作，`longWorkTired` 偏舒展恢复动作。 |
-| 中/大动作 | 按展示状态低频选择 `glance-left/right`、`focus-shift`、`fix-posture`、`posture-reset`、`stretch`、`look-around` 等动作。 |
+| 小动作 | `reviewFocused` 轮换 `adjust-glasses`、`thinking`、`nod`、`tap-keyboard`、`check-notes`、`stretch-wrist`；`waitingAttentive` 轮换 `cursor-look`、`waving`、`nod`、`tiny-hand-adjust`、`adjust-outfit`，避免只在少数动作里循环。 |
+| 中/大动作 | 按展示状态低频选择 `glance-left/right`、`focus-shift`、`fix-posture`、`posture-reset`、`stretch`、`look-around`、`step-aside` 等动作；waiting 的大动作池覆盖更多已有生成目录。 |
 | 交互动作 | hover 按展示状态轮换短反馈：等待态用 head/body rig 看光标或播放挥手，思考态扶眼镜/思考，工具态敲键盘/切换焦点，完成态点头/肩部放松；右键在离线态显示 `failed`，其它状态显示 `cursor-look`；drag 释放触发 body rig `drag-release-settle`。 |
 | 调试动作 | `turning` 只保留为调试/素材检查，不进入默认调度。 |
 
@@ -88,9 +117,9 @@ Codex 元数据先被分类为 `CodexWorkPhase`，再映射为可长期停留的
 
 | 调度器 | 运行节奏 | 冲突策略 |
 |--------|----------|----------|
-| 微动作调度 | working `14-30s`，waiting `18-36s` | 微动作是最低干扰 ambient；hover 时暂停。 |
-| 小动作调度 | working `32-68s`，waiting `35-75s` | 小动作可短暂排队，状态变化或交互时丢弃。 |
-| 大动作调度 | working `220-360s`，waiting `200-340s` | 只在空窗执行，忙碌、hover、状态刚切换时丢弃。 |
+| 微动作调度 | 初始 `10-16s`；working/tool `22-38s`，waiting/idle `28-46s` | 微动作是最低干扰 ambient；hover 时暂停。 |
+| 小动作调度 | 初始 `24-36s`；working/tool `45-75s`，waiting/idle `55-90s` | 小动作可短暂排队，状态变化或交互时丢弃。 |
+| 大动作调度 | 初始 `75-110s`；working/tool `180-300s`，waiting/idle `150-240s` | 只在空窗执行，忙碌、hover、状态刚切换时丢弃。 |
 | 交互调度 | hover、右键、drag、状态变化事件驱动 | hover 会打断 ambient 微/小/大动作并进入短反馈；若当前已经是 interaction，则不二次抢占；右键和拖动仍是高优先级。 |
 
 当前运行资产帧数：
@@ -124,7 +153,7 @@ Codex 元数据先被分类为 `CodexWorkPhase`，再映射为可长期停留的
 | `wake-up` | 20 | Codex 从离线/等待恢复的轻反馈；等待/待命 rig 可用时优先走 SpriteKit body/head。 |
 | `turning` | 25 | 8 张转身关键帧之间插入缓动补间，并回到正面。 |
 
-`blink`、`slow-blink`、`eye-shift-left/right`、`focus-tighten`、`relax-face`、`small-smile`、`tired-soften`、`curious-look`、`hover-smile`、`context-menu-attend` 是旧脸部覆盖方案留下的兼容枚举，不再作为运行素材目录保存，也不进入默认调度。旧目录里的红线覆盖和坐标绘制痕迹会破坏脸部观感，已从 `assets/lingxi-ol-hires/` 清理。状态测试会校验这些动作 `defaultEligible=false`，同时校验所有默认可调度动作都带有非空表情意图。需要不同表情时，使用 `assets/reference/generated/expression-keyframes-v1.png` 这类整帧关键源图重新派生动作帧，不拆五官覆盖层。
+`blink`、`eye-shift-left/right`、`focus-tighten`、`relax-face`、`small-smile`、`tired-soften`、`curious-look`、`hover-smile`、`context-menu-attend` 是旧脸部覆盖方案留下的兼容枚举，不再作为 Lingxi 运行素材目录保存，也不进入默认调度。旧目录里的红线覆盖和坐标绘制痕迹会破坏脸部观感，已从 `assets/lingxi-ol-hires/` 清理。`slow-blink` 仍保持 catalog 兼容枚举和 `defaultEligible=false`，但 `PetBehaviorProfile.manekiNeko` 会显式调度招财猫自己的全帧 `slow-blink` 眯眼动作。状态测试会校验这些动作 `defaultEligible=false`，同时校验所有默认可调度动作都带有非空表情意图。需要不同表情时，使用 `assets/reference/generated/expression-keyframes-v1.png` 这类整帧关键源图重新派生动作帧，不拆五官覆盖层。
 
 ## 素材目录
 
@@ -170,19 +199,42 @@ assets/
     parts/
       body.png
       head.png
+  maneki-neko/
+    pet.json
+    spritesheet.webp
+  maneki-neko-hires/
+    idle/
+    waiting/
+    failed/
+    waving/
+    cursor-look/
+    glance-left/
+    glance-right/
+    look-around/
+    hair-sway/
+    breathing/
+    nod/
+    slow-blink/
+    drag-release-settle/
+    wake-up/
+    manifest.txt
   reference/generated/
     base-shirt-skirt-hires.png
     action-strip-shirt-skirt-consistent.png
     turntable-strip-shirt-skirt-consistent.png
 ```
 
-`assets/lingxi-ol/` 是 Codex 标准宠物包备份。当前独立桌宠优先使用 `assets/lingxi-ol-hires/`，只有高清帧缺失时才 fallback 到 spritesheet。
+`assets/lingxi-ol/` 是 Codex 原生宠物包。当前独立桌宠优先使用 `assets/lingxi-ol-hires/`，只有高清帧缺失时才 fallback 到 spritesheet。
 
 `assets/reference/generated/` 只保留当前运行帧重建所需的 3 张源图。历史探索图、旧 turntable 草稿和旧动作探索图已清理，避免把废弃素材误当作当前来源。
 
 `assets/lingxi-ol-rig/` 是第一版 SpriteKit rig PoC 资产。它从 `waiting/00.png` 机械拆层生成，用于验证透明 `SKView`、动作分流、rig/PNG 切换和打包路径。当前只保留 `body` 和 `head` 两层，用于安全验证呼吸、头部轻摆、重心变化、肩部放松、拖动回弹、唤醒和轻微看向用户；`head` 作为 `body` 的子节点挂载，body 变换会带动 head，再叠加 head 局部动作。它不是最终高质量拆层资产。脸部、头发、眼镜和手部等局部分层需要重新生成或手工修正后再接入。
 
 `scripts/validate-rig-assets.py` 被 `scripts/test-status-logic.sh` 和 `scripts/build-app.sh` 调用。它会拒绝非 `body/head` 的当前 rig 部件、错误父子关系、缺失图片、尺寸不匹配、透明像素隐藏 RGB 污染，以及 `eye`、`face`、`lid`、`hair`、`glasses` 等高风险覆盖层文件名或 part id，防止红线/贴片素材回流到运行包。
+
+`assets/maneki-neko-hires/` 是招财猫运行帧目录，由 `scripts/build-maneki-neko-assets.py` 可复现生成。它覆盖当前 App 会读取的所有高清状态目录；`assets/maneki-neko/spritesheet.webp` 作为标准 8x9 备份，便于未来接入 Codex 标准宠物包或在高清目录缺失时降级。`scripts/validate-maneki-neko-assets.py` 会校验招手爪上下/左右、尾巴左右/上下、左右看动作和 `slow-blink` 眼睛开合的最低像素变化，防止重新生成后变成近似静态帧。
+
+招财猫高清目录刻意小于 `Lingxi OL`：当前只保留 `idle`、`waiting`、`failed`、`waving`、`slow-blink`、`cursor-look`、`glance-left`、`glance-right`、`look-around`、`hair-sway`、`breathing`、`nod`、`drag-release-settle` 和 `wake-up`。不生成 `adjust-glasses`、`tap-keyboard`、`check-notes`、`stretch`、`step-aside`、`posture-reset`、`turning` 等人形 companion 动作，缺失高清目录时仍可通过 spritesheet fallback 启动，但调度层不会主动请求这些动作。
 
 ## 素材生成约束
 
