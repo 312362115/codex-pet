@@ -15,6 +15,7 @@ DISPLAY_SIZE = (576, 624)
 CELL_SIZE = (192, 208)
 MAX_BODY_HEIGHT = 540
 MAX_UPSCALE = 1.0
+MAX_NORMALIZED_UPSCALE = 1.08
 ACTION_FRAME_COUNT = 24
 ACTION_START_HOLD_FRAMES = 3
 ACTION_TARGET_HOLD_FRAMES = 5
@@ -150,25 +151,94 @@ def normalize_hidden_rgb(image: Image.Image) -> Image.Image:
     return rgba
 
 
-def trim_and_fit(frame: Image.Image) -> Image.Image:
+def remove_alpha_islands(image: Image.Image, min_area_ratio: float = 0.02) -> Image.Image:
+    rgba = image.convert("RGBA")
+    width, height = rgba.size
+    alpha_values = list(image_data(rgba.getchannel("A")))
+    seen = bytearray(width * height)
+    components: list[list[int]] = []
+
+    for start_index, alpha in enumerate(alpha_values):
+        if seen[start_index] or alpha <= 8:
+            continue
+
+        stack = [start_index]
+        seen[start_index] = 1
+        component: list[int] = []
+        while stack:
+            index = stack.pop()
+            component.append(index)
+            x = index % width
+            y = index // width
+            for next_y in range(max(0, y - 1), min(height, y + 2)):
+                row_start = next_y * width
+                for next_x in range(max(0, x - 1), min(width, x + 2)):
+                    next_index = row_start + next_x
+                    if seen[next_index] or alpha_values[next_index] <= 8:
+                        continue
+                    seen[next_index] = 1
+                    stack.append(next_index)
+
+        components.append(component)
+
+    if len(components) <= 1:
+        return rgba
+
+    largest_area = max(len(component) for component in components)
+    minimum_area = max(24, round(largest_area * min_area_ratio))
+    removed_indexes = [
+        index
+        for component in components
+        if len(component) < minimum_area
+        for index in component
+    ]
+    if not removed_indexes:
+        return rgba
+
+    pixels = list(image_data(rgba))
+    for index in removed_indexes:
+        pixels[index] = (0, 0, 0, 0)
+    rgba.putdata(pixels)
+    return rgba
+
+
+def trim_and_fit(
+    frame: Image.Image,
+    target_body_height: int | None = None,
+    target_baseline_y: int | None = None,
+) -> Image.Image:
     bbox = frame.getbbox()
     if bbox is None:
         cropped = frame
+        crop_left = 0
+        crop_top = 0
     else:
         left, top, right, bottom = bbox
         width = right - left
         height = bottom - top
         pad_x = max(10, round(width * 0.08))
         pad_y = max(10, round(height * 0.06))
+        crop_left = max(0, left - pad_x)
+        crop_top = max(0, top - pad_y)
         cropped = frame.crop((
-            max(0, left - pad_x),
-            max(0, top - pad_y),
+            crop_left,
+            crop_top,
             min(frame.width, right + pad_x),
             min(frame.height, bottom + pad_y),
         ))
 
     canvas_width, canvas_height = DISPLAY_SIZE
-    scale = min(canvas_width / cropped.width, MAX_BODY_HEIGHT / cropped.height, MAX_UPSCALE)
+    if bbox is None or target_body_height is None:
+        scale = min(canvas_width / cropped.width, MAX_BODY_HEIGHT / cropped.height, MAX_UPSCALE)
+    else:
+        left, top, right, bottom = bbox
+        body_height = bottom - top
+        scale = min(
+            target_body_height / body_height,
+            canvas_width / cropped.width,
+            MAX_BODY_HEIGHT / body_height,
+            MAX_NORMALIZED_UPSCALE,
+        )
     scaled = cropped.resize((
         max(1, round(cropped.width * scale)),
         max(1, round(cropped.height * scale)),
@@ -176,8 +246,18 @@ def trim_and_fit(frame: Image.Image) -> Image.Image:
     scaled = scaled.filter(ImageFilter.UnsharpMask(radius=0.45, percent=28, threshold=8))
 
     canvas = Image.new("RGBA", DISPLAY_SIZE, (0, 0, 0, 0))
-    x = (canvas_width - scaled.width) // 2
-    y = canvas_height - scaled.height
+    if bbox is None or target_body_height is None:
+        x = (canvas_width - scaled.width) // 2
+        y = canvas_height - scaled.height
+    else:
+        left, top, right, bottom = bbox
+        body_left = round((left - crop_left) * scale)
+        body_right = round((right - crop_left) * scale)
+        body_bottom = round((bottom - crop_top) * scale)
+        x = round(canvas_width / 2 - (body_left + body_right) / 2)
+        y = (target_baseline_y if target_baseline_y is not None else canvas_height) - body_bottom
+        x = max(0, min(x, canvas_width - scaled.width))
+        y = max(0, min(y, canvas_height - scaled.height))
     canvas.alpha_composite(scaled, (x, y))
     return clean_edge_residue(canvas)
 
@@ -359,7 +439,13 @@ def turntable_sequence(turn_frames: list[Image.Image]) -> list[Image.Image]:
     return frames
 
 
-def split_grid(path: Path, columns: int, rows: int) -> list[Image.Image]:
+def split_grid(
+    path: Path,
+    columns: int,
+    rows: int,
+    target_body_height: int | None = None,
+    target_baseline_y: int | None = None,
+) -> list[Image.Image]:
     source = Image.open(path).convert("RGBA")
     frames: list[Image.Image] = []
     for row in range(rows):
@@ -369,7 +455,13 @@ def split_grid(path: Path, columns: int, rows: int) -> list[Image.Image]:
             top = round(row * source.height / rows)
             bottom = round((row + 1) * source.height / rows)
             frame = source.crop((left, top, right, bottom))
-            frames.append(trim_and_fit(transparent_chroma(frame)))
+            # AI 横条偶尔会把相邻格的边缘残片切进来，先移除游离小块再算人物尺寸。
+            cleaned = remove_alpha_islands(transparent_chroma(frame))
+            frames.append(trim_and_fit(
+                cleaned,
+                target_body_height=target_body_height,
+                target_baseline_y=target_baseline_y,
+            ))
     return frames
 
 
@@ -437,9 +529,33 @@ def write_native_pet_package() -> None:
 
 def main() -> None:
     primary_frame = load_single_frame(PRIMARY_SOURCE)
-    action_frames = split_grid(ACTION_STRIP_SOURCE, columns=4, rows=1)
-    turn_frames = split_grid(TURNTABLE_STRIP_SOURCE, columns=8, rows=1)
-    expression_frames = split_grid(EXPRESSION_STRIP_SOURCE, columns=6, rows=1)
+    primary_bbox = primary_frame.getbbox()
+    if primary_bbox is None:
+        raise ValueError(f"Primary source produced an empty frame: {PRIMARY_SOURCE}")
+    target_body_height = primary_bbox[3] - primary_bbox[1]
+    target_baseline_y = primary_bbox[3]
+
+    action_frames = split_grid(
+        ACTION_STRIP_SOURCE,
+        columns=4,
+        rows=1,
+        target_body_height=target_body_height,
+        target_baseline_y=target_baseline_y,
+    )
+    turn_frames = split_grid(
+        TURNTABLE_STRIP_SOURCE,
+        columns=8,
+        rows=1,
+        target_body_height=target_body_height,
+        target_baseline_y=target_baseline_y,
+    )
+    expression_frames = split_grid(
+        EXPRESSION_STRIP_SOURCE,
+        columns=6,
+        rows=1,
+        target_body_height=target_body_height,
+        target_baseline_y=target_baseline_y,
+    )
     (
         failed_concerned_frame,
         review_focused_frame,
@@ -528,7 +644,9 @@ def main() -> None:
                 "display_size=576x624",
                 f"max_body_height={MAX_BODY_HEIGHT}",
                 f"max_upscale={MAX_UPSCALE}",
-                "motion=alpha-aware tweened transitions, no body scale, no upscale",
+                f"normalized_body_height={target_body_height}",
+                f"normalized_body_baseline_y={target_baseline_y}",
+                "motion=alpha-aware tweened transitions, normalized body height",
                 f"action_frame_count={ACTION_FRAME_COUNT}",
                 f"glance_frame_count={GLANCE_FRAME_COUNT}",
                 f"micro_short_frame_count={MICRO_SHORT_FRAME_COUNT}",
