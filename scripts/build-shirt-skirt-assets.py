@@ -13,6 +13,8 @@ OUTPUT_ROOT = ROOT / "assets" / "lingxi-ol-hires"
 PET_ROOT = ROOT / "assets" / "lingxi-ol"
 DISPLAY_SIZE = (576, 624)
 CELL_SIZE = (192, 208)
+V2_GRID_SIZE = (8, 11)
+STANDARD_ROWS = 9
 MAX_BODY_HEIGHT = 540
 MAX_UPSCALE = 1.0
 MAX_NORMALIZED_UPSCALE = 1.08
@@ -69,16 +71,16 @@ RUNTIME_STATES = {
     "waving",
     "weight-shift",
 }
-NATIVE_ROW_SOURCES = [
-    ("idle", "breathing"),
-    ("running-right", "glance-right"),
-    ("running-left", "glance-left"),
-    ("waving", "waving"),
-    ("jumping", "wake-up"),
-    ("failed", "failed"),
-    ("waiting", "waiting"),
-    ("running", "thinking"),
-    ("review", "review"),
+NATIVE_ROWS = [
+    ("idle", 6),
+    ("running-right", 8),
+    ("running-left", 8),
+    ("waving", 4),
+    ("jumping", 5),
+    ("failed", 8),
+    ("waiting", 6),
+    ("running", 6),
+    ("review", 6),
 ]
 
 def is_chroma_green(pixel: tuple[int, int, int, int]) -> bool:
@@ -478,45 +480,185 @@ def write_state(state: str, frames: list[Image.Image]) -> None:
         frame.save(state_dir / f"{index:02d}.png")
 
 
-def fit_native_cell(frame: Image.Image) -> Image.Image:
-    rgba = clean_edge_residue(frame.convert("RGBA"))
-    bbox = rgba.getbbox()
-    cropped = rgba.crop(bbox) if bbox else rgba
-    scale = min(CELL_SIZE[0] / cropped.width, CELL_SIZE[1] / cropped.height)
-    resized = cropped.resize(
-        (max(1, round(cropped.width * scale)), max(1, round(cropped.height * scale))),
-        Image.Resampling.LANCZOS,
+def fit_native_sequence(frames: list[Image.Image]) -> list[Image.Image]:
+    """用整行共享几何生成原生帧，保留跳跃、呼吸和行进的相对位移。"""
+    cleaned = [clean_edge_residue(frame.convert("RGBA")) for frame in frames]
+    bboxes = [frame.getbbox() for frame in cleaned]
+    visible = [bbox for bbox in bboxes if bbox is not None]
+    if not visible:
+        raise ValueError("Native sequence must contain visible frames")
+
+    left = min(bbox[0] for bbox in visible)
+    top = min(bbox[1] for bbox in visible)
+    right = max(bbox[2] for bbox in visible)
+    bottom = max(bbox[3] for bbox in visible)
+    union_bbox = (left, top, right, bottom)
+    union_width = right - left
+    union_height = bottom - top
+    scale = min(
+        (CELL_SIZE[0] - 10) / union_width,
+        (CELL_SIZE[1] - 10) / union_height,
+        1.0,
     )
-    cell = Image.new("RGBA", CELL_SIZE, (0, 0, 0, 0))
-    cell.alpha_composite(resized, ((CELL_SIZE[0] - resized.width) // 2, CELL_SIZE[1] - resized.height))
-    return normalize_hidden_rgb(cell)
+    target_size = (
+        max(1, round(union_width * scale)),
+        max(1, round(union_height * scale)),
+    )
+    target_position = (
+        (CELL_SIZE[0] - target_size[0]) // 2,
+        CELL_SIZE[1] - target_size[1] - 5,
+    )
+
+    cells = []
+    for frame in cleaned:
+        resized = frame.crop(union_bbox).resize(target_size, Image.Resampling.LANCZOS)
+        cell = Image.new("RGBA", CELL_SIZE, (0, 0, 0, 0))
+        cell.alpha_composite(resized, target_position)
+        cells.append(normalize_hidden_rgb(cell))
+    return cells
 
 
-def select_native_frames(state: str) -> list[Image.Image]:
-    paths = sorted((OUTPUT_ROOT / state).glob("*.png"))
-    if not paths:
-        raise FileNotFoundError(f"Missing runtime state for native spritesheet: {state}")
+def shifted_keyframes(
+    keyframes: list[Image.Image],
+    offsets: list[tuple[int, int]],
+) -> list[Image.Image]:
+    if len(keyframes) != len(offsets):
+        raise ValueError("Native keyframes and offsets must have identical lengths")
+    return [
+        shifted_frame(frame, offset_x, offset_y)
+        for frame, (offset_x, offset_y) in zip(keyframes, offsets)
+    ]
 
-    selected = []
-    for index in range(8):
-        source_index = round(index * (len(paths) - 1) / 7)
-        selected.append(fit_native_cell(Image.open(paths[source_index]).convert("RGBA")))
-    return selected
+
+def build_native_sequences(
+    primary_frame: Image.Image,
+    action_frames: list[Image.Image],
+    turn_frames: list[Image.Image],
+    expression_frames: list[Image.Image],
+) -> dict[str, list[Image.Image]]:
+    failed_frame = expression_frames[0]
+    review_frame = expression_frames[1]
+    wave_expression_frame = expression_frames[2]
+    waiting_frame = expression_frames[3]
+    running_frame = action_frames[2]
+    wave_frame = action_frames[3]
+    right_profile = turn_frames[6]
+    right_three_quarter = turn_frames[7]
+    left_profile = turn_frames[2]
+    left_three_quarter = turn_frames[1]
+
+    native_source_sequences = {
+        "idle": [
+            shifted_frame(primary_frame, 0, offset_y)
+            for offset_y in (0, -3, -6, -6, -3, 0)
+        ],
+        "running-right": shifted_keyframes(
+            [right_profile, right_three_quarter] * 4,
+            [(0, 0), (5, -6), (10, -2), (5, -8), (0, 0), (-5, -6), (-10, -2), (-5, -8)],
+        ),
+        "running-left": shifted_keyframes(
+            [left_profile, left_three_quarter] * 4,
+            [(0, 0), (-5, -6), (-10, -2), (-5, -8), (0, 0), (5, -6), (10, -2), (5, -8)],
+        ),
+        "waving": [
+            wave_frame.copy(),
+            wave_expression_frame.copy(),
+            shifted_frame(wave_frame, -2, -3),
+            wave_expression_frame.copy(),
+        ],
+        "jumping": [
+            shifted_frame(primary_frame, 0, offset_y)
+            for offset_y in (0, -18, -36, -18, 0)
+        ],
+        "failed": [
+            shifted_frame(failed_frame, 0, offset_y)
+            for offset_y in (0, 3, 7, 10, 10, 7, 3, 0)
+        ],
+        "waiting": [
+            shifted_frame(waiting_frame, offset_x, offset_y)
+            for offset_x, offset_y in ((0, 0), (2, -2), (4, -4), (2, -2), (0, 0), (-2, -1))
+        ],
+        "running": [
+            shifted_frame(running_frame, offset_x, offset_y)
+            for offset_x, offset_y in ((0, 0), (3, -5), (6, -2), (3, -7), (0, 0), (-3, -4))
+        ],
+        "review": [
+            shifted_frame(review_frame, 0, offset_y)
+            for offset_y in (0, 2, 5, 5, 2, 0)
+        ],
+    }
+
+    expected_counts = dict(NATIVE_ROWS)
+    for state, frames in native_source_sequences.items():
+        expected = expected_counts[state]
+        if len(frames) != expected:
+            raise AssertionError(f"Expected {expected} native {state} frames, got {len(frames)}")
+    return {
+        state: fit_native_sequence(frames)
+        for state, frames in native_source_sequences.items()
+    }
 
 
-def write_native_pet_package() -> None:
+def load_approved_v2_atlas() -> Image.Image:
+    spritesheet_path = PET_ROOT / "spritesheet.webp"
+    if not spritesheet_path.is_file():
+        raise FileNotFoundError(
+            "Missing approved Lingxi OL v2 spritesheet. Complete the hatch-pet v2 QA run before rebuilding assets."
+        )
+    image = Image.open(spritesheet_path).convert("RGBA")
+    expected_size = (CELL_SIZE[0] * V2_GRID_SIZE[0], CELL_SIZE[1] * V2_GRID_SIZE[1])
+    if image.size != expected_size:
+        raise ValueError(
+            f"Approved Lingxi OL spritesheet must be {expected_size}, got {image.size}. "
+            "Complete the hatch-pet v2 migration before rebuilding assets."
+        )
+    required_cells = [(0, 6), *[(row, column) for row in (9, 10) for column in range(8)]]
+    for row, column in required_cells:
+        cell = image.crop(
+            (
+                column * CELL_SIZE[0],
+                row * CELL_SIZE[1],
+                (column + 1) * CELL_SIZE[0],
+                (row + 1) * CELL_SIZE[1],
+            )
+        )
+        if cell.getchannel("A").getbbox() is None:
+            raise ValueError(
+                f"Approved Lingxi OL v2 spritesheet is missing required cell row={row} column={column}."
+            )
+    return image
+
+
+def write_native_pet_package(native_sequences: dict[str, list[Image.Image]]) -> None:
+    approved_v2 = load_approved_v2_atlas()
     PET_ROOT.mkdir(parents=True, exist_ok=True)
-    sheet = Image.new("RGBA", (CELL_SIZE[0] * 8, CELL_SIZE[1] * len(NATIVE_ROW_SOURCES)), (0, 0, 0, 0))
-    for row_index, (_codex_state, source_state) in enumerate(NATIVE_ROW_SOURCES):
-        for column_index, frame in enumerate(select_native_frames(source_state)):
+    sheet = Image.new(
+        "RGBA",
+        (CELL_SIZE[0] * V2_GRID_SIZE[0], CELL_SIZE[1] * V2_GRID_SIZE[1]),
+        (0, 0, 0, 0),
+    )
+    for row_index, (state, frame_count) in enumerate(NATIVE_ROWS):
+        frames = native_sequences[state]
+        if len(frames) != frame_count:
+            raise AssertionError(f"Expected {frame_count} native {state} frames, got {len(frames)}")
+        for column_index, frame in enumerate(frames):
             sheet.alpha_composite(frame, (column_index * CELL_SIZE[0], row_index * CELL_SIZE[1]))
+
+    neutral = approved_v2.crop((6 * CELL_SIZE[0], 0, 7 * CELL_SIZE[0], CELL_SIZE[1]))
+    sheet.alpha_composite(neutral, (6 * CELL_SIZE[0], 0))
+    look_rows = approved_v2.crop(
+        (0, STANDARD_ROWS * CELL_SIZE[1], sheet.width, V2_GRID_SIZE[1] * CELL_SIZE[1])
+    )
+    sheet.alpha_composite(look_rows, (0, STANDARD_ROWS * CELL_SIZE[1]))
 
     normalize_hidden_rgb(sheet).save(PET_ROOT / "spritesheet.webp", lossless=True, quality=100, method=6, exact=True)
     (PET_ROOT / "pet.json").write_text(
         json.dumps(
             {
+                "id": "lingxi-ol",
                 "displayName": "Lingxi OL",
                 "description": "A polished office-style Codex companion with glasses, a white shirt, black skirt, and calm work-focused gestures.",
+                "spriteVersionNumber": 2,
                 "spritesheetPath": "spritesheet.webp",
             },
             ensure_ascii=False,
@@ -559,11 +701,18 @@ def main() -> None:
     (
         failed_concerned_frame,
         review_focused_frame,
-        waiting_expectant_frame,
+        _wave_expression_frame,
         completed_soft_smile_frame,
         tired_soft_frame,
         wake_up_clear_frame,
     ) = expression_frames
+    waiting_expectant_frame = completed_soft_smile_frame
+    native_sequences = build_native_sequences(
+        primary_frame,
+        action_frames,
+        turn_frames,
+        expression_frames,
+    )
 
     OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
     for state_dir in OUTPUT_ROOT.iterdir():
@@ -664,7 +813,7 @@ def main() -> None:
         ) + "\n",
         encoding="utf-8",
     )
-    write_native_pet_package()
+    write_native_pet_package(native_sequences)
     print(f"Wrote shirt-skirt runtime frames to {OUTPUT_ROOT}")
     print(f"Wrote Lingxi OL native pet package to {PET_ROOT}")
 

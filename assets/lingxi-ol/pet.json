@@ -1,5 +1,7 @@
 {
+  "id": "lingxi-ol",
   "displayName": "Lingxi OL",
   "description": "A polished office-style Codex companion with glasses, a white shirt, black skirt, and calm work-focused gestures.",
+  "spriteVersionNumber": 2,
   "spritesheetPath": "spritesheet.webp"
 }

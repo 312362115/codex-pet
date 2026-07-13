@@ -8,6 +8,8 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSET_ROOT = ROOT / "assets" / "maneki-neko-hires"
+NATIVE_SPRITESHEET = ROOT / "assets" / "maneki-neko" / "spritesheet.webp"
+NATIVE_CELL_SIZE = (192, 208)
 
 
 EXPECTED_STATE_FRAME_COUNTS = {
@@ -183,6 +185,57 @@ def expect_pruned_state_dirs() -> None:
             raise SystemExit(f"FAIL {state} frame count: expected {expected_count}, got {count}")
 
 
+def native_cell(image: Image.Image, row: int, column: int) -> Image.Image:
+    width, height = NATIVE_CELL_SIZE
+    return image.crop((column * width, row * height, (column + 1) * width, (row + 1) * height))
+
+
+def alpha_region_centroid_x(image: Image.Image, top: int, bottom: int) -> float:
+    alpha = image.getchannel("A").crop((0, top, image.width, bottom))
+    weighted_x = 0.0
+    total = 0.0
+    for y in range(alpha.height):
+        for x in range(alpha.width):
+            value = alpha.getpixel((x, y))
+            weighted_x += x * value
+            total += value
+    if total <= 0:
+        raise SystemExit("FAIL native pet centroid region has no visible pixels")
+    return weighted_x / total
+
+
+def expect_native_directional_actions() -> None:
+    image = Image.open(NATIVE_SPRITESHEET).convert("RGBA")
+    right_lean = []
+    left_lean = []
+    for column in range(8):
+        right = native_cell(image, 1, column)
+        left = native_cell(image, 2, column)
+        right_lean.append(
+            alpha_region_centroid_x(right, 0, 120) - alpha_region_centroid_x(right, 120, 208)
+        )
+        left_lean.append(
+            alpha_region_centroid_x(left, 0, 120) - alpha_region_centroid_x(left, 120, 208)
+        )
+
+    if min(right_lean) < 5:
+        raise SystemExit(f"FAIL native running-right lean: expected all frames > 5px, got {right_lean}")
+    if max(left_lean) > -5:
+        raise SystemExit(f"FAIL native running-left lean: expected all frames < -5px, got {left_lean}")
+
+    jump_bottoms = []
+    for column in range(5):
+        bbox = native_cell(image, 4, column).getchannel("A").getbbox()
+        if bbox is None:
+            raise SystemExit(f"FAIL native jumping frame {column} is empty")
+        jump_bottoms.append(bbox[3])
+    if jump_bottoms[2] > 180 or min(jump_bottoms[0], jump_bottoms[-1]) < 198:
+        raise SystemExit(
+            "FAIL native jumping lift: expected middle frame airborne and endpoints planted, "
+            f"got bottoms={jump_bottoms}"
+        )
+
+
 def main() -> None:
     expect_pruned_state_dirs()
 
@@ -209,6 +262,7 @@ def main() -> None:
     expect_at_least("glance-right gaze motion", gaze_right_x, 1)
     expect_at_least("look-around gaze motion", gaze_around_x, 3)
     expect_slow_blink_closes_eyes()
+    expect_native_directional_actions()
 
     print("PASS maneki neko assets")
 

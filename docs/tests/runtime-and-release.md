@@ -34,7 +34,7 @@ PASS Codex native pet
 - 表情安全策略：旧脸部覆盖动作 `defaultEligible=false`；所有默认可调度动作都有非空 baked expression intent。
 - 动作 catalog 的层级分类。
 - 默认窗口位置策略：启动落在当前屏幕可见区域左下角，并保留 24px 边距。
-- Codex 原生宠物包：`assets/lingxi-ol/` 和 `assets/maneki-neko/` 的 `pet.json` 与 8x9 `spritesheet.webp` 结构可加载，透明像素和每格可见内容有效。
+- Codex 原生宠物包：`assets/lingxi-ol/` 和 `assets/maneki-neko/` 的 `pet.json` 与 8x11 v2 `spritesheet.webp` 结构可加载，透明空槽、中性帧、标准状态和 16 个方向有效；除允许作为失败定格反馈的 `failed` 外，标准动作行不能整行静止，`jumping` 中段必须相对首尾明确离地。
 - rig 渲染模式策略：`breathing`、`hairSway`、`weightShift`、`shoulderRelax`、`cursorLook`、`dragReleaseSettle`、`wakeUp` 走 SpriteKit rig；旧脸部兼容枚举不走 rig。
 - rig 资产策略：manifest 只能引用当前允许的 `body/head` 部件；`body` 必须是 root，`head` 必须 parent 到 `body`；拒绝脸部、眼睛、头发、眼镜等高风险覆盖层；透明像素隐藏 RGB 必须归零。
 - 招财猫资产策略：只允许精简状态目录；`waving` 的抬爪必须有可见上下招手，`hair-sway` 必须作为摆尾动作有可见左右/上下位移，`glance-left/right` 和 `look-around` 必须限制头部大幅滑动并保留轻微看向。
@@ -203,7 +203,9 @@ ls -lh assets/maneki-neko/spritesheet.webp build/CodexPetCompanion.app/Contents/
 - 源码和安装后的原生包都输出 `PASS Codex native pet`。
 - `~/.codex/pets/lingxi-ol/pet.json` 存在，Codex 读取到的原生宠物 ID 为目录派生的 `custom:lingxi-ol`。
 - `~/.codex/pets/maneki-neko/pet.json` 存在，`id` 为 `maneki-neko`。
-- 两个 `spritesheet.webp` 尺寸都为 `1536x1872`，对应 8 列 x 9 行、单格 `192x208`。
+- 两个 `pet.json` 都包含 `spriteVersionNumber: 2`，且 `id` 与目录名一致。
+- 两个 `spritesheet.webp` 尺寸都为 `1536x2288`，对应 8 列 x 11 行、单格 `192x208`。
+- 标准动画行未用槽完全透明，`idle[6]` 是中性帧，rows 9-10 的 16 个方向格均有可见内容。
 - 原生包只包含 `pet.json` 和 `spritesheet.webp`，不包含高清动作目录。
 
 ## 用例 3：Release 打包

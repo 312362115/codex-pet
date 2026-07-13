@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="$ROOT/build"
@@ -15,6 +16,7 @@ swiftc \
   -o "$BUILD_DIR/status-tests"
 
 "$BUILD_DIR/status-tests"
+python3 "$ROOT/Tests/NativePetValidatorTestRunner.py"
 "$ROOT/scripts/validate-rig-assets.py"
 "$ROOT/scripts/validate-maneki-neko-assets.py"
 "$ROOT/scripts/validate-codex-native-pet.py" "$ROOT/assets/lingxi-ol"

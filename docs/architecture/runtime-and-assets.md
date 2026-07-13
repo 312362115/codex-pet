@@ -11,7 +11,7 @@
 | 招财猫帧生成 | `scripts/build-maneki-neko-assets.py` | 可复现生成 `assets/maneki-neko-hires/` 运行时 PNG 帧和 `assets/maneki-neko/spritesheet.webp`。 |
 | Rig 资产生成 | `scripts/build-rig-assets.py` | 从当前待机帧机械生成 `assets/lingxi-ol-rig/` PoC 拆层资产。 |
 | Rig 资产验证 | `scripts/validate-rig-assets.py` | 校验 rig manifest、body/head 部件图、透明像素和高风险覆盖层禁入规则。 |
-| Codex 原生宠物验证 | `scripts/validate-codex-native-pet.py` | 校验 `pet.json`、8x9 `spritesheet.webp`、透明像素和每格可见内容。 |
+| Codex 原生宠物验证 | `scripts/validate-codex-native-pet.py` | 按版本校验 `pet.json`、v1/v2 图集尺寸、透明空槽、每格可见内容、需动画的标准行非静止和跳跃离地；`failed` 可使用静态失败反馈。 |
 | 源码安装 | `scripts/install.sh` | 测试、构建、签名、安装并重启本机桌宠，同时安装 Codex 原生宠物包。 |
 | 原生宠物安装 | `scripts/install-codex-native-pet.sh` | 将 `assets/lingxi-ol/` 和 `assets/maneki-neko/` 安装到 `~/.codex/pets/`。 |
 | Release 打包 | `scripts/package-release.sh` | 生成 GitHub Release 预编译 zip 和 checksum。 |
@@ -56,9 +56,9 @@ PNG 动作播放使用固定总时长和动态帧间隔。运行时按实际帧�
 - 标准 spritesheet 先读 bundle 内 `Resources/<pet-dir>/spritesheet.webp`，再回落到 `~/.codex/pets/<pet-dir>/spritesheet.webp`。
 - 只有配置了 rig 目录的宠物才启用 SpriteKit rig；当前 `招财猫` 不带 rig，所有动作走 PNG 帧。
 
-`Lingxi OL` 和招财猫同时维护 Codex 原生宠物包：`assets/lingxi-ol/` 与 `assets/maneki-neko/` 都只包含 `pet.json` 和标准 `1536x1872` 的 8x9 `spritesheet.webp`，源码安装时会默认复制到 `~/.codex/pets/`，也可单独通过 `scripts/install-codex-native-pet.sh` 安装。Release 安装脚本从包内 `CodexPetCompanion.app/Contents/Resources/<pet-id>/` 复制同一份原生宠物包。Codex 原生路径不包含高清动作目录，也不携带本桌宠专用的行为 profile；它只负责满足 Codex 原生宠物加载格式。
+`Lingxi OL` 和招财猫同时维护 Codex 原生 v2 宠物包：`assets/lingxi-ol/` 与 `assets/maneki-neko/` 都只包含 `pet.json` 和标准 `1536x2288` 的 8x11 `spritesheet.webp`。rows 0-8 是标准状态，rows 9-10 是 16 个顺时针环视方向；`pet.json` 必须声明 `spriteVersionNumber: 2`。源码安装时会默认复制到 `~/.codex/pets/`，也可单独通过 `scripts/install-codex-native-pet.sh` 安装。Release 安装脚本从包内 `CodexPetCompanion.app/Contents/Resources/<pet-id>/` 复制同一份原生宠物包。Codex 原生路径不包含高清动作目录，也不携带本桌宠专用的行为 profile；它只负责满足 Codex 原生宠物加载格式。
 
-`assets/lingxi-ol/spritesheet.webp` 由 `scripts/build-shirt-skirt-assets.py` 从当前 `assets/lingxi-ol-hires/` 派生，按 Codex 原生 9 行状态映射到：`idle <- breathing`、`running-right <- glance-right`、`running-left <- glance-left`、`waving <- waving`、`jumping <- wake-up`、`failed <- failed`、`waiting <- waiting`、`running <- thinking`、`review <- review`。这样 OL 的原生宠物包会跟随当前高清帧变化，而不是停留在旧 spritesheet。
+`assets/lingxi-ol/spritesheet.webp` 的标准 rows 0-8 由 `scripts/build-shirt-skirt-assets.py` 使用当前高清参考关键帧确定性生成。每行共享同一个裁切、缩放和注册几何，保留呼吸、行进和跳跃的相对位移；不同姿态使用离散关键帧，不做会产生双影的 alpha 混合。`running-right` / `running-left` 使用相反侧面关键帧，`jumping` 首尾落地且中段离地。普通重建会从当前已批准 v2 图集保留中性帧和 rows 9-10；若仓库尚无通过 `hatch-pet` QA 的 v2 图集，构建器会明确失败，避免静默降级或伪造方向帧。
 
 ## 状态读取
 
@@ -232,7 +232,7 @@ assets/
 
 `scripts/validate-rig-assets.py` 被 `scripts/test-status-logic.sh` 和 `scripts/build-app.sh` 调用。它会拒绝非 `body/head` 的当前 rig 部件、错误父子关系、缺失图片、尺寸不匹配、透明像素隐藏 RGB 污染，以及 `eye`、`face`、`lid`、`hair`、`glasses` 等高风险覆盖层文件名或 part id，防止红线/贴片素材回流到运行包。
 
-`assets/maneki-neko-hires/` 是招财猫运行帧目录，由 `scripts/build-maneki-neko-assets.py` 可复现生成。它覆盖当前 App 会读取的所有高清状态目录；`assets/maneki-neko/spritesheet.webp` 作为标准 8x9 备份，便于未来接入 Codex 标准宠物包或在高清目录缺失时降级。`scripts/validate-maneki-neko-assets.py` 会校验招手爪上下/左右、尾巴左右/上下、左右看动作和 `slow-blink` 眼睛开合的最低像素变化，防止重新生成后变成近似静态帧。
+`assets/maneki-neko-hires/` 是招财猫运行帧目录，由 `scripts/build-maneki-neko-assets.py` 可复现生成。它覆盖当前 App 会读取的所有高清状态目录；`assets/maneki-neko/spritesheet.webp` 是原生 v2 包和高清目录缺失时的 fallback。构建器重建标准 rows 0-8，并从当前已批准图集保留中性帧和 16 个方向。`scripts/validate-maneki-neko-assets.py` 会校验招手爪上下/左右、尾巴左右/上下、左右看动作和 `slow-blink` 眼睛开合的最低像素变化，防止重新生成后变成近似静态帧。
 
 招财猫高清目录刻意小于 `Lingxi OL`：当前只保留 `idle`、`waiting`、`failed`、`waving`、`slow-blink`、`cursor-look`、`glance-left`、`glance-right`、`look-around`、`hair-sway`、`breathing`、`nod`、`drag-release-settle` 和 `wake-up`。不生成 `adjust-glasses`、`tap-keyboard`、`check-notes`、`stretch`、`step-aside`、`posture-reset`、`turning` 等人形 companion 动作，缺失高清目录时仍可通过 spritesheet fallback 启动，但调度层不会主动请求这些动作。
 

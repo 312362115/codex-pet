@@ -55,7 +55,7 @@
 - `INSTALL.md`：安装、验证和排障说明。
 - `assets/lingxi-ol-hires/`：当前桌宠实际使用的高清帧。
 - `assets/lingxi-ol-rig/`：当前 SpriteKit rig PoC 资产，只包含安全的身体/头部拆层，用于呼吸、头部轻摆、重心变化、肩部放松、轻微看向用户、拖动落位和唤醒反馈。
-- `assets/lingxi-ol/`：由当前高清帧派生的 Codex 原生宠物包，包含 `pet.json` 和 8x9 `spritesheet.webp`。
+- `assets/lingxi-ol/`：由当前高清帧派生的 Codex 原生 v2 宠物包，包含 `pet.json` 和 8x11 `spritesheet.webp`。
 - `assets/maneki-neko-hires/`：招财猫实际使用的高清透明 PNG 帧。
 - `assets/maneki-neko/`：招财猫标准 spritesheet 备份和 `pet.json`。
 - `assets/reference/generated/`：当前运行帧重建所需的高清源图。
@@ -66,7 +66,7 @@
 - `scripts/test-status-logic.sh`：运行策略测试。
 - `scripts/validate-rig-assets.py`：校验 rig manifest、部件图、透明像素和高风险脸部/头发覆盖层禁入规则。
 - `scripts/validate-maneki-neko-assets.py`：校验招财猫招手、摆尾和左右看动作幅度。
-- `scripts/validate-codex-native-pet.py`：校验 Codex 原生宠物包的 `pet.json`、8x9 spritesheet 尺寸、透明像素和每格可见内容。
+- `scripts/validate-codex-native-pet.py`：按 `spriteVersionNumber` 校验 Codex 原生宠物包的清单、图集尺寸、透明空槽和每格可见内容。
 - `scripts/build-hires-assets.py`：旧版临时行图重建脚本，不作为当前运行素材主入口。
 - `scripts/build-shirt-skirt-assets.py`：从衬衣包臀裙参考图重建当前运行帧。
 - `scripts/build-maneki-neko-assets.py`：可复现生成招财猫高清帧和标准 spritesheet。
@@ -94,7 +94,7 @@ open build/CodexPetCompanion.app
 ./scripts/install-codex-native-pet.sh --rebuild-assets
 ```
 
-安装后包路径为 `~/.codex/pets/lingxi-ol/` 和 `~/.codex/pets/maneki-neko/`，都包含 `pet.json` 和标准 `1536x1872` 的 8x9 `spritesheet.webp`。
+安装后包路径为 `~/.codex/pets/lingxi-ol/` 和 `~/.codex/pets/maneki-neko/`，都包含 `spriteVersionNumber: 2` 的 `pet.json` 和标准 `1536x2288` 的 8x11 `spritesheet.webp`。
 
 ## 生成 Release 包
 

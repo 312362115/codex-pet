@@ -14,6 +14,8 @@ HIRES_ROOT = ROOT / "assets" / "maneki-neko-hires"
 PET_ROOT = ROOT / "assets" / "maneki-neko"
 DISPLAY_SIZE = (576, 624)
 CELL_SIZE = (192, 208)
+V2_GRID_SIZE = (8, 11)
+STANDARD_ROWS = 9
 SCALE = 3
 CONTENT_SCALE = 0.82
 CONTENT_BASELINE_Y = 600
@@ -37,15 +39,15 @@ STATE_FRAME_COUNTS = {
 }
 
 SPRITESHEET_ROWS = [
-    "idle",
-    "running-right",
-    "running-left",
-    "waving",
-    "jumping",
-    "failed",
-    "waiting",
-    "review",
-    "running",
+    ("idle", 6),
+    ("running-right", 8),
+    ("running-left", 8),
+    ("waving", 4),
+    ("jumping", 5),
+    ("failed", 8),
+    ("waiting", 6),
+    ("running", 6),
+    ("review", 6),
 ]
 
 
@@ -136,6 +138,7 @@ def cat_params(variant: str, index: int, count: int) -> dict[str, float | str | 
     params: dict[str, float | str | bool] = {
         "body_x": 0,
         "body_y": 0,
+        "body_tilt": 0,
         "head_x": 0,
         "head_y": 0,
         "paw_x": 0,
@@ -150,6 +153,12 @@ def cat_params(variant: str, index: int, count: int) -> dict[str, float | str | 
         "eye_open": 1.0,
         "mood": "happy",
         "bell_y": 0,
+        "left_foot_x": 0,
+        "left_foot_y": 0,
+        "right_foot_x": 0,
+        "right_foot_y": 0,
+        "left_arm_x": 0,
+        "left_arm_y": 0,
         "right_arm_pose": "raised",
     }
 
@@ -177,6 +186,27 @@ def cat_params(variant: str, index: int, count: int) -> dict[str, float | str | 
         params["coin_y"] = 4 * abs(wave)
         params["eye"] = "focused"
         params["gaze_x"] = 3
+    elif variant in {"running-right", "running-left"}:
+        direction = 1 if variant == "running-right" else -1
+        stride = phase(index, count)
+        params["body_tilt"] = -7 * direction
+        params["body_y"] = -5 * abs(stride)
+        params["head_x"] = 10 * direction
+        params["head_y"] = -3
+        params["gaze_x"] = 13 * direction
+        params["paw_x"] = 14 * direction * stride
+        params["paw_y"] = -8 * abs(stride)
+        params["left_arm_x"] = 12 * direction * stride
+        params["left_arm_y"] = -7 * abs(stride)
+        params["left_foot_x"] = 15 * direction * stride
+        params["left_foot_y"] = -8 * max(0.0, stride)
+        params["right_foot_x"] = -15 * direction * stride
+        params["right_foot_y"] = 8 * min(0.0, stride)
+        params["tail_x"] = -44 * direction + 10 * stride
+        params["tail_y"] = -8 * abs(stride)
+        params["coin_y"] = 5 * abs(stride)
+        params["eye"] = "focused"
+        params["right_arm_pose"] = "rest"
     elif variant == "review":
         params["head_x"] = -3
         params["head_y"] = 2 * bounce
@@ -240,9 +270,12 @@ def cat_params(variant: str, index: int, count: int) -> dict[str, float | str | 
         params["head_y"] = 8 * (1 - progress)
         params["eye"] = "blink" if index < 3 else "open"
     elif variant == "jumping":
-        params["body_y"] = -24 * math.sin(index / max(1, count - 1) * math.pi)
-        params["head_y"] = -16 * math.sin(index / max(1, count - 1) * math.pi)
-        params["paw_y"] = -10
+        lift = math.sin(index / max(1, count - 1) * math.pi)
+        params["head_y"] = -8 * lift
+        params["paw_y"] = -16 * lift
+        params["left_foot_y"] = -10 * lift
+        params["right_foot_y"] = -10 * lift
+        params["tail_y"] = -10 * lift
     elif variant == "look-around":
         turn = math.sin(index / max(1, count - 1) * math.tau)
         params["gaze_x"] = 11 * turn
@@ -295,6 +328,12 @@ def draw_cat(variant: str, index: int, count: int, size: tuple[int, int] = DISPL
     tail_y = float(params["tail_y"])
     gaze_x = float(params["gaze_x"])
     bell_y = float(params["bell_y"])
+    left_foot_x = float(params["left_foot_x"])
+    left_foot_y = float(params["left_foot_y"])
+    right_foot_x = float(params["right_foot_x"])
+    right_foot_y = float(params["right_foot_y"])
+    left_arm_x = float(params["left_arm_x"])
+    left_arm_y = float(params["left_arm_y"])
     right_arm_pose = str(params["right_arm_pose"])
 
     ink = (63, 48, 43, 255)
@@ -381,8 +420,18 @@ def draw_cat(variant: str, index: int, count: int, size: tuple[int, int] = DISPL
 
     draw_tail()
     draw.ellipse(b((197, 282, 379, 526)), fill=white, outline=ink, width=s(4))
-    draw.ellipse(b((222, 484, 284, 552)), fill=white, outline=ink, width=s(4))
-    draw.ellipse(b((304, 484, 366, 552)), fill=white, outline=ink, width=s(4))
+    draw.ellipse(
+        b((222 + left_foot_x, 484 + left_foot_y, 284 + left_foot_x, 552 + left_foot_y)),
+        fill=white,
+        outline=ink,
+        width=s(4),
+    )
+    draw.ellipse(
+        b((304 + right_foot_x, 484 + right_foot_y, 366 + right_foot_x, 552 + right_foot_y)),
+        fill=white,
+        outline=ink,
+        width=s(4),
+    )
 
     draw.rounded_rectangle(
         b((224, 381 + coin_y, 352, 493 + coin_y)),
@@ -393,9 +442,18 @@ def draw_cat(variant: str, index: int, count: int, size: tuple[int, int] = DISPL
     )
     draw.ellipse(b((244, 404 + coin_y, 332, 472 + coin_y)), outline=(255, 226, 126, 255), width=s(5))
 
-    draw_round_line(draw, [(224 + ox, 350 + oy), (252 + ox, 414 + oy)], ink, 36)
-    draw_round_line(draw, [(224 + ox, 350 + oy), (252 + ox, 414 + oy)], white, 27)
-    draw.ellipse(b((234, 398, 282, 446)), fill=white, outline=ink, width=s(4))
+    left_arm_points = [
+        (224 + ox, 350 + oy),
+        (252 + ox + left_arm_x, 414 + oy + left_arm_y),
+    ]
+    draw_round_line(draw, left_arm_points, ink, 36)
+    draw_round_line(draw, left_arm_points, white, 27)
+    draw.ellipse(
+        b((234 + left_arm_x, 398 + left_arm_y, 282 + left_arm_x, 446 + left_arm_y)),
+        fill=white,
+        outline=ink,
+        width=s(4),
+    )
 
     draw_polygon(draw, [(216 + hx, 168 + hy), (231 + hx, 64 + hy), (297 + hx, 158 + hy)], white, ink, 4)
     draw_polygon(draw, [(360 + hx, 168 + hy), (347 + hx, 64 + hy), (281 + hx, 158 + hy)], white, ink, 4)
@@ -471,6 +529,10 @@ def draw_cat(variant: str, index: int, count: int, size: tuple[int, int] = DISPL
 
     draw_right_arm()
 
+    body_tilt = float(params["body_tilt"])
+    if body_tilt:
+        image = image.rotate(body_tilt, resample=Image.Resampling.BICUBIC)
+
     image = image.resize(size, Image.Resampling.LANCZOS)
     image = image.filter(ImageFilter.UnsharpMask(radius=0.35, percent=18, threshold=6))
     if size == DISPLAY_SIZE:
@@ -507,25 +569,41 @@ def write_state(state: str, count: int) -> None:
         draw_cat(variant, index, count).save(state_dir / f"{index:02d}.png")
 
 
-def fit_to_cell(frame: Image.Image) -> Image.Image:
+def fit_to_cell(
+    frame: Image.Image,
+    *,
+    scale_multiplier: float = 1.0,
+    bottom_lift: int = 0,
+) -> Image.Image:
     frame = frame.convert("RGBA")
     bbox = frame.getbbox()
     cropped = frame.crop(bbox) if bbox else frame
-    scale = min(CELL_SIZE[0] / cropped.width, CELL_SIZE[1] / cropped.height)
+    scale = min(
+        (CELL_SIZE[0] - 10) / cropped.width,
+        (CELL_SIZE[1] - 10) / cropped.height,
+        1.0,
+    )
+    scale *= scale_multiplier
     resized = cropped.resize(
         (max(1, round(cropped.width * scale)), max(1, round(cropped.height * scale))),
         Image.Resampling.LANCZOS,
     )
     cell = Image.new("RGBA", CELL_SIZE, (0, 0, 0, 0))
-    cell.alpha_composite(resized, ((CELL_SIZE[0] - resized.width) // 2, CELL_SIZE[1] - resized.height))
+    cell.alpha_composite(
+        resized,
+        (
+            (CELL_SIZE[0] - resized.width) // 2,
+            CELL_SIZE[1] - resized.height - 5 - bottom_lift,
+        ),
+    )
     return normalize_hidden_rgb(cell)
 
 
 def spritesheet_variant(row: str) -> str:
     return {
         "idle": "idle",
-        "running-right": "glance-right",
-        "running-left": "glance-left",
+        "running-right": "running-right",
+        "running-left": "running-left",
         "waving": "waving",
         "jumping": "jumping",
         "failed": "failed",
@@ -535,14 +613,65 @@ def spritesheet_variant(row: str) -> str:
     }[row]
 
 
+def load_approved_v2_atlas() -> Image.Image:
+    spritesheet_path = PET_ROOT / "spritesheet.webp"
+    if not spritesheet_path.is_file():
+        raise FileNotFoundError(
+            "Missing approved Maneki Neko v2 spritesheet. Complete the hatch-pet v2 QA run before rebuilding assets."
+        )
+    image = Image.open(spritesheet_path).convert("RGBA")
+    expected_size = (CELL_SIZE[0] * V2_GRID_SIZE[0], CELL_SIZE[1] * V2_GRID_SIZE[1])
+    if image.size != expected_size:
+        raise ValueError(
+            f"Approved Maneki Neko spritesheet must be {expected_size}, got {image.size}. "
+            "Complete the hatch-pet v2 migration before rebuilding assets."
+        )
+    required_cells = [(0, 6), *[(row, column) for row in (9, 10) for column in range(8)]]
+    for row, column in required_cells:
+        cell = image.crop(
+            (
+                column * CELL_SIZE[0],
+                row * CELL_SIZE[1],
+                (column + 1) * CELL_SIZE[0],
+                (row + 1) * CELL_SIZE[1],
+            )
+        )
+        if cell.getchannel("A").getbbox() is None:
+            raise ValueError(
+                f"Approved Maneki Neko v2 spritesheet is missing required cell row={row} column={column}."
+            )
+    return image
+
+
 def write_spritesheet() -> None:
+    approved_v2 = load_approved_v2_atlas()
     PET_ROOT.mkdir(parents=True, exist_ok=True)
-    sheet = Image.new("RGBA", (CELL_SIZE[0] * 8, CELL_SIZE[1] * len(SPRITESHEET_ROWS)), (0, 0, 0, 0))
-    for row_index, row in enumerate(SPRITESHEET_ROWS):
+    sheet = Image.new(
+        "RGBA",
+        (CELL_SIZE[0] * V2_GRID_SIZE[0], CELL_SIZE[1] * V2_GRID_SIZE[1]),
+        (0, 0, 0, 0),
+    )
+    for row_index, (row, frame_count) in enumerate(SPRITESHEET_ROWS):
         variant = spritesheet_variant(row)
-        for column in range(8):
-            frame = fit_to_cell(draw_cat(variant, column, 8))
+        for column in range(frame_count):
+            if row == "jumping":
+                progress = column / max(1, frame_count - 1)
+                jump_lift = round(28 * math.sin(progress * math.pi))
+                frame = fit_to_cell(
+                    draw_cat(variant, column, frame_count),
+                    scale_multiplier=0.86,
+                    bottom_lift=jump_lift,
+                )
+            else:
+                frame = fit_to_cell(draw_cat(variant, column, frame_count))
             sheet.alpha_composite(frame, (column * CELL_SIZE[0], row_index * CELL_SIZE[1]))
+
+    neutral = approved_v2.crop((6 * CELL_SIZE[0], 0, 7 * CELL_SIZE[0], CELL_SIZE[1]))
+    sheet.alpha_composite(neutral, (6 * CELL_SIZE[0], 0))
+    look_rows = approved_v2.crop(
+        (0, STANDARD_ROWS * CELL_SIZE[1], sheet.width, V2_GRID_SIZE[1] * CELL_SIZE[1])
+    )
+    sheet.alpha_composite(look_rows, (0, STANDARD_ROWS * CELL_SIZE[1]))
     normalize_hidden_rgb(sheet).save(PET_ROOT / "spritesheet.webp", lossless=True, quality=100, method=6)
     (PET_ROOT / "pet.json").write_text(
         json.dumps(
@@ -550,6 +679,7 @@ def write_spritesheet() -> None:
                 "id": "maneki-neko",
                 "displayName": "招财猫",
                 "description": "A compact lucky white Maneki Neko desktop pet with a raised paw, red collar, gold bell, and coin.",
+                "spriteVersionNumber": 2,
                 "spritesheetPath": "spritesheet.webp",
             },
             ensure_ascii=False,

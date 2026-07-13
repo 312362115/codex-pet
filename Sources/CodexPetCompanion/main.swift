@@ -13,8 +13,21 @@ private enum PetRow: Int {
     case jumping = 4
     case failed = 5
     case waiting = 6
-    case review = 7
-    case running = 8
+    case running = 7
+    case review = 8
+
+    var frameCount: Int {
+        switch self {
+        case .idle, .waiting, .running, .review:
+            return 6
+        case .runningRight, .runningLeft, .failed:
+            return 8
+        case .waving:
+            return 4
+        case .jumping:
+            return 5
+        }
+    }
 }
 
 private struct CompanionConfig {
@@ -414,7 +427,7 @@ private final class PetFrameProvider {
             return frames.count
         }
 
-        return config.columns
+        return row(for: animation).frameCount
     }
 
     private static func loadHighResolutionFrames(
