@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "custom-lingxi-ol-clear-agenda",
+  "name": "Lingxi OL · 清透日程",
+  "brandSubtitle": "LINGXI OL CLEAR DESK",
+  "tagline": "把复杂工作整理得清清楚楚。",
+  "projectPrefix": "工作台 · ",
+  "projectLabel": "◉  选择项目",
+  "statusText": "CLEAR FOCUS",
+  "quote": "MAKE SPACE FOR CLEAR THINKING.",
+  "image": "background.png",
+  "appearance": "light",
+  "art": {
+    "focusX": 0.78,
+    "focusY": 0.42,
+    "safeArea": "left",
+    "taskMode": "ambient"
+  },
+  "colors": {
+    "background": "#f7f4ea",
+    "panel": "#fffdf7",
+    "panelAlt": "#e8ecdf",
+    "accent": "#657754",
+    "accentAlt": "#5e6f4b",
+    "secondary": "#8f7138",
+    "highlight": "#506f68",
+    "text": "#30352c",
+    "muted": "#6f7469",
+    "line": "rgba(101, 119, 84, .24)"
+  }
+}

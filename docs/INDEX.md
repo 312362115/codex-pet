@@ -10,6 +10,7 @@
 
 - [运行时与素材架构](architecture/runtime-and-assets.md)：AppKit 悬浮窗、Codex 状态读取、动画策略、高清帧加载、素材生成和发布包结构。
 - [动作体系设计与实现](architecture/action-system-design.md)：梳理表情、姿态、微动作、主动作、动作组合、场景语义、调度规则、插帧算法、动作 clip 资产和当前落地状态。
+- [Codex Dream Skin 主题安装 Agent Runbook](architecture/dream-skin-theme-installation.md)：说明主题与引擎的依赖边界、打包、首次安装、导入、切换授权、实机验证和完整恢复流程。
 
 ## 技术方案
 

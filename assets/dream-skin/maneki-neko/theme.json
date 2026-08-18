@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "custom-maneki-neko-fortune-v2",
+  "name": "招财猫 · 招福工坊",
+  "brandSubtitle": "MANEKI NEKO WORKSHOP",
+  "tagline": "把好运带进每一次构建。",
+  "projectPrefix": "开工 · ",
+  "projectLabel": "◉  选择项目",
+  "statusText": "FORTUNE MODE",
+  "quote": "BUILD BOLD. SHIP LUCKY.",
+  "image": "background.png",
+  "appearance": "light",
+  "art": {
+    "focusX": 0.76,
+    "focusY": 0.46,
+    "safeArea": "left",
+    "taskMode": "ambient"
+  },
+  "colors": {
+    "background": "#f8e3b1",
+    "panel": "#fff5dc",
+    "panelAlt": "#f4d59b",
+    "accent": "#c64028",
+    "accentAlt": "#e45b35",
+    "secondary": "#e9a928",
+    "highlight": "#4f8b72",
+    "text": "#312620",
+    "muted": "#76584a",
+    "line": "rgba(198, 64, 40, .26)"
+  }
+}

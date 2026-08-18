@@ -1,0 +1,73 @@
+[data-ds-part="root"] {
+  color: var(--ds-theme-color-text);
+  font-family: ui-rounded, -apple-system, system-ui, sans-serif;
+  letter-spacing: 0.1px;
+}
+
+[data-ds-part="sidebar"] {
+  background-color: rgba(255, 246, 224, 0.84);
+  border-right-color: rgba(198, 64, 40, 0.2);
+  border-right-style: solid;
+  border-right-width: 1px;
+  box-shadow: 10px 0 32px rgba(97, 52, 24, 0.12);
+  backdrop-filter: blur(22px) saturate(1.12);
+}
+
+[data-ds-part="header"] {
+  background-color: rgba(255, 246, 224, 0.66);
+  border-bottom-color: rgba(198, 64, 40, 0.18);
+  border-bottom-style: solid;
+  border-bottom-width: 1px;
+  backdrop-filter: blur(18px) saturate(1.1);
+}
+
+[data-ds-part="home-hero"] {
+  background-color: rgba(255, 247, 226, 0.28);
+  border-color: rgba(198, 64, 40, 0.18);
+  border-style: solid;
+  border-width: 1px;
+  border-radius: 20px;
+  box-shadow: 0 16px 40px rgba(97, 52, 24, 0.1);
+  backdrop-filter: blur(10px) saturate(1.08);
+}
+
+[data-ds-part="project-list"] {
+  background-color: rgba(255, 247, 226, 0.22);
+  border-color: rgba(233, 169, 40, 0.28);
+  border-style: solid;
+  border-width: 1px;
+  border-radius: 16px;
+  box-shadow: 0 10px 28px rgba(97, 52, 24, 0.08);
+  backdrop-filter: blur(8px) saturate(1.06);
+}
+
+[data-ds-part="composer"] {
+  background-color: rgba(255, 248, 230, 0.9);
+  border-color: rgba(198, 64, 40, 0.3);
+  border-style: solid;
+  border-width: 1px;
+  border-radius: 18px;
+  box-shadow: 0 16px 40px rgba(97, 52, 24, 0.16);
+  backdrop-filter: blur(24px) saturate(1.12);
+  transition-property: background-color, border-color, box-shadow;
+  transition-duration: 180ms;
+}
+
+[data-ds-part="composer"]:focus-visible {
+  border-color: var(--ds-theme-color-accent);
+  box-shadow: 0 16px 40px rgba(198, 64, 40, 0.22);
+}
+
+[data-ds-part="composer-toolbar"] {
+  color: var(--ds-theme-color-muted);
+}
+
+[data-ds-part="dialog"] {
+  background-color: rgba(255, 246, 224, 0.96);
+  border-color: rgba(198, 64, 40, 0.24);
+  border-style: solid;
+  border-width: 1px;
+  border-radius: 12px;
+  box-shadow: 0 24px 48px rgba(49, 38, 32, 0.24);
+  backdrop-filter: blur(24px) saturate(1.1);
+}
