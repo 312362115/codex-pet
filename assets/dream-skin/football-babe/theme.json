@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "custom-football-babe-matchday-v1",
+  "name": "足球宝贝 · 决胜夜场",
+  "brandSubtitle": "MATCHDAY FOCUS",
+  "tagline": "把每一次构建踢进目标。",
+  "projectPrefix": "战术板 · ",
+  "projectLabel": "◉  选择项目",
+  "statusText": "MATCH MODE",
+  "quote": "FOCUS. BUILD. SCORE.",
+  "image": "background.png",
+  "appearance": "dark",
+  "art": {
+    "focusX": 0.8,
+    "focusY": 0.48,
+    "safeArea": "left",
+    "taskMode": "ambient"
+  },
+  "colors": {
+    "background": "#0d1014",
+    "panel": "#17191d",
+    "panelAlt": "#22242a",
+    "accent": "#e64b50",
+    "accentAlt": "#bf2f38",
+    "secondary": "#f0dfcf",
+    "highlight": "#8fa179",
+    "text": "#f7f3ed",
+    "muted": "#b8b1aa",
+    "line": "rgba(230, 75, 80, .3)"
+  }
+}

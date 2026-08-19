@@ -20,11 +20,12 @@
 |---|---|---|
 | `assets/dream-skin/maneki-neko/` | `招财猫 · 招福工坊` | 奶油金、朱砂红、琥珀金和玉绿的浅色主题。 |
 | `assets/dream-skin/lingxi-ol/` | `Lingxi OL · 清透日程` | 暖象牙、灰绿色和香槟金的浅色清透主题。 |
+| `assets/dream-skin/football-babe/` | `足球宝贝 · 决胜夜场` | 炭黑、深红和暖白的夜场比赛深色主题。 |
 
 生成可导入的普通 ZIP：
 
 ```bash
-THEME_SLUG="lingxi-ol" # 或 maneki-neko
+THEME_SLUG="football-babe" # 或 lingxi-ol / maneki-neko
 mkdir -p dist
 ditto -c -k --norsrc --keepParent \
   "assets/dream-skin/$THEME_SLUG" \
@@ -83,6 +84,7 @@ Agent 自动化安装、验证和恢复流程见 [`docs/architecture/dream-skin-
 - `assets/maneki-neko/`：招财猫标准 spritesheet 备份和 `pet.json`。
 - `assets/dream-skin/maneki-neko/`：招财猫 Codex 工作台主题，包含背景、主题配置和 Safe CSS。
 - `assets/dream-skin/lingxi-ol/`：Lingxi OL Codex 工作台主题，包含背景、主题配置和 Safe CSS。
+- `assets/dream-skin/football-babe/`：足球宝贝 Codex 工作台主题，包含夜场背景、主题配置和 Safe CSS。
 - `assets/reference/generated/`：当前运行帧重建所需的高清源图。
 - `scripts/install.sh`：一键测试、构建、签名、安装并重启桌宠，同时安装 Codex 原生宠物包。
 - `scripts/install-codex-native-pet.sh`：把 `Lingxi OL` 和 `招财猫` 安装为 Codex 原生宠物包到 `~/.codex/pets/`。

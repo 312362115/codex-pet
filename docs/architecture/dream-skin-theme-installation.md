@@ -17,6 +17,7 @@
 |---|---|---|
 | `maneki-neko` | `招财猫 · 招福工坊` | 浅色红金主题。 |
 | `lingxi-ol` | `Lingxi OL · 清透日程` | 浅色灰绿主题。 |
+| `football-babe` | `足球宝贝 · 决胜夜场` | 深色红黑夜场主题。 |
 
 每个主题包包含且只包含：
 
@@ -57,7 +58,7 @@ assets/dream-skin/<theme-id>/
 
 ```bash
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-THEME_SLUG="lingxi-ol" # 或 maneki-neko
+THEME_SLUG="football-babe" # 或 lingxi-ol / maneki-neko
 THEME_SOURCE="$REPO_ROOT/assets/dream-skin/$THEME_SLUG"
 THEME_ZIP="$REPO_ROOT/dist/$THEME_SLUG-dream-skin.zip"
 
@@ -103,7 +104,7 @@ cd /absolute/path/to/Codex-Dream-Skin
 ```bash
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 ENGINE_ROOT="$HOME/.codex/codex-dream-skin-studio"
-THEME_SLUG="lingxi-ol" # 或 maneki-neko
+THEME_SLUG="football-babe" # 或 lingxi-ol / maneki-neko
 THEME_ZIP="$REPO_ROOT/dist/$THEME_SLUG-dream-skin.zip"
 
 IMPORT_RESULT="$(
